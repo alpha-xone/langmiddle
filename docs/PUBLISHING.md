@@ -170,7 +170,7 @@ The repository includes:
 
 1. **Continuous Integration** (`.github/workflows/ci.yml`):
    - Runs on every push and pull request
-   - Tests across multiple Python versions (3.9-3.13)
+   - Tests across multiple Python versions (3.10-3.13)
    - Tests on multiple operating systems (Ubuntu, Windows, macOS)
    - Runs linting, formatting, and type checking
 

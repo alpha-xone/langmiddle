@@ -209,7 +209,6 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
     def __init__(
         self,
         save_interval: int = 1,
-        extract_interval: int = 5,
         backend: str = "sqlite",
         **backend_kwargs,
     ):
@@ -228,9 +227,7 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         self.save_interval = save_interval
         self._model_call_count = 0
         self._saved_msg_ids = set()  # Persistent tracking of saved message IDs
-        self._logged_messages = (
-            set()
-        )  # Track all log messages already displayed to avoid duplicates
+        self._logged_messages = set()  # Track all log messages already displayed to avoid duplicates
 
         # Set default db_path for SQLite if not provided
         if backend == "sqlite" and "db_path" not in backend_kwargs:
