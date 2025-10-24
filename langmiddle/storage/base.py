@@ -20,7 +20,7 @@ class ChatStorageBackend(ABC):
     TYPE_TO_ROLE = {"human": "user", "ai": "assistant"}
 
     @abstractmethod
-    def authenticate(self, credentials: Dict[str, Any]) -> bool:
+    def authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
         """
         Authenticate with the storage backend.
 
@@ -33,7 +33,7 @@ class ChatStorageBackend(ABC):
         pass
 
     @abstractmethod
-    def extract_user_id(self, credentials: Dict[str, Any]) -> Optional[str]:
+    def extract_user_id(self, credentials: Optional[Dict[str, Any]]) -> Optional[str]:
         """
         Extract user ID from credentials.
 

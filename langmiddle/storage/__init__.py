@@ -17,7 +17,7 @@ from .supabase_backend import SupabaseStorageBackend
 
 logger = get_graph_logger(__name__)
 
-__all__ = ["ChatStorage", "save_chat_history"]
+__all__ = ["ChatStorage"]
 
 
 class ChatStorage:
@@ -70,7 +70,7 @@ class ChatStorage:
     def save_chat_history(
         self,
         thread_id: str,
-        credentials: Dict[str, Any],
+        credentials: Dict[str, Any] | None,
         messages: List[AnyMessage],
         user_id: Optional[str] = None,
         saved_msg_ids: Optional[set] = None,
@@ -199,61 +199,4 @@ class ChatStorage:
             "total_messages": len(messages),
             "skipped_count": len(messages) - len(new_messages),
             "saved_msg_ids": saved_msg_ids,
-        }
-
-
-def save_chat_history(
-    thread_id: str,
-    auth_token: str | None,
-    messages: List[AnyMessage],
-    user_id: Optional[str] = None,
-    saved_msg_ids: Optional[set] = None,
-    backend_type: str = "supabase",
-    **backend_kwargs,
-) -> Dict[str, Any]:
-    """
-    Backward compatible function for saving chat history.
-
-    This function maintains compatibility with the original storage.py interface
-    while using the new backend system.
-
-    Args:
-        thread_id: Thread identifier for the conversation
-        auth_token: Authentication token (JWT for Supabase, ID token for Firebase, None for SQLite)
-        messages: List of conversation messages to save
-        user_id: Optional user identifier
-        saved_msg_ids: Optional set of already-saved message IDs
-        backend_type: Storage backend to use ('supabase', 'sqlite', 'firebase')
-        **backend_kwargs: Additional backend-specific parameters
-
-    Returns:
-        Dict with status and info (same format as original function)
-    """
-    try:
-        storage = ChatStorage.create(backend_type, **backend_kwargs)
-
-        # Prepare credentials based on backend type
-        credentials = {"user_id": user_id}
-        if auth_token:
-            if backend_type == "supabase":
-                credentials["jwt_token"] = auth_token
-            elif backend_type == "firebase":
-                credentials["id_token"] = auth_token  # Firebase uses id_token
-
-        return storage.save_chat_history(
-            thread_id=thread_id,
-            credentials=credentials,
-            messages=messages,
-            user_id=user_id,
-            saved_msg_ids=saved_msg_ids,
-        )
-
-    except Exception as e:
-        logger.error(f"Error in save_chat_history: {e}")
-        return {
-            "success": False,
-            "saved_count": 0,
-            "errors": [f"Storage system error: {e}"],
-            "user_id": user_id,
-            "saved_msg_ids": saved_msg_ids or set(),
         }

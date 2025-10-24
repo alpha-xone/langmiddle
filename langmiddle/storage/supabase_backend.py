@@ -230,7 +230,7 @@ class SupabaseStorageBackend(ChatStorageBackend):
                 f"3. Run the SQL files from: {Path(__file__).parent / 'supabase'}"
             )
 
-    def authenticate(self, credentials: Dict[str, Any]) -> bool:
+    def authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
         """
         Authenticate with Supabase using JWT.
 
@@ -240,7 +240,7 @@ class SupabaseStorageBackend(ChatStorageBackend):
         Returns:
             True if authentication successful or not required
         """
-        jwt_token = credentials.get("jwt_token")
+        jwt_token = credentials.get("jwt_token") if credentials else None
         if not jwt_token:
             logger.debug("No JWT token provided, allowing non-RLS access")
             return True  # Allow non-RLS access
@@ -254,7 +254,7 @@ class SupabaseStorageBackend(ChatStorageBackend):
             logger.error(f"Supabase authentication failed: {e}")
             return False
 
-    def extract_user_id(self, credentials: Dict[str, Any]) -> Optional[str]:
+    def extract_user_id(self, credentials: Optional[Dict[str, Any]]) -> Optional[str]:
         """
         Extract user ID from JWT token or direct user_id.
 
@@ -265,12 +265,12 @@ class SupabaseStorageBackend(ChatStorageBackend):
             User ID if found, None otherwise
         """
         # Check for direct user_id first
-        user_id = credentials.get("user_id")
+        user_id = credentials.get("user_id") if credentials else None
         if user_id:
             return user_id
 
         # Extract from JWT token
-        jwt_token = credentials.get("jwt_token")
+        jwt_token = credentials.get("jwt_token") if credentials else None
         if not jwt_token:
             return None
 

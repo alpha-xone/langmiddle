@@ -67,7 +67,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
             logger.error(f"Failed to initialize Firebase: {e}")
             raise
 
-    def authenticate(self, credentials: Dict[str, Any]) -> bool:
+    def authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
         """
         Authenticate with Firebase using ID token.
 
@@ -81,7 +81,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
             logger.error("Firebase not available")
             return False
 
-        id_token = credentials.get("id_token")
+        id_token = credentials.get("id_token") if credentials else None
         if not id_token:
             logger.debug("No ID token provided, allowing access without authentication")
             return True  # Allow without authentication
@@ -94,7 +94,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
             logger.error(f"Firebase authentication failed: {e}")
             return False
 
-    def extract_user_id(self, credentials: Dict[str, Any]) -> Optional[str]:
+    def extract_user_id(self, credentials: Optional[Dict[str, Any]]) -> Optional[str]:
         """
         Extract user ID from Firebase ID token or direct user_id.
 
@@ -106,15 +106,15 @@ class FirebaseStorageBackend(ChatStorageBackend):
         """
         if not FIREBASE_AVAILABLE:
             # Fallback to direct user_id when Firebase not available
-            return credentials.get("user_id")
+            return credentials.get("user_id") if credentials else None
 
         # Check for direct user_id first
-        user_id = credentials.get("user_id")
+        user_id = credentials.get("user_id") if credentials else None
         if user_id:
             return user_id
 
         # Extract from ID token
-        id_token = credentials.get("id_token")
+        id_token = credentials.get("id_token") if credentials else None
         if not id_token:
             return None
 

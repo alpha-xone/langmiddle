@@ -117,7 +117,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
             logger.error(f"Failed to initialize SQLite database: {e}")
             raise
 
-    def authenticate(self, credentials: Dict[str, Any]) -> bool:
+    def authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
         """
         SQLite doesn't require authentication.
 
@@ -129,7 +129,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
         """
         return True
 
-    def extract_user_id(self, credentials: Dict[str, Any]) -> Optional[str]:
+    def extract_user_id(self, credentials: Optional[Dict[str, Any]]) -> Optional[str]:
         """
         Extract user ID from credentials.
 
@@ -139,7 +139,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
         Returns:
             User ID if provided
         """
-        return credentials.get("user_id")
+        return credentials.get("user_id") if credentials else None
 
     def get_existing_message_ids(self, thread_id: str) -> set:
         """

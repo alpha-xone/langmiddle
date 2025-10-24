@@ -8,7 +8,6 @@ with different backends: Supabase, SQLite, and Firebase.
 from langchain_core.messages import AIMessage, HumanMessage
 
 from langmiddle.storage import ChatStorage
-from langmiddle.utils.storage import save_chat_history
 
 # Create some sample messages
 messages = [
@@ -32,13 +31,12 @@ print("=== LangMiddle Multi-Backend Storage Examples ===\n")
 print("1. SQLite Local File Storage:")
 print("   Best for: Development, local applications, offline usage")
 
-result = save_chat_history(
+store = ChatStorage.create("sqlite", db_path="./chat_history.db")
+result = store.save_chat_history(
     thread_id="example_thread_sqlite",
-    auth_token=None,
+    credentials=None,
     messages=messages,
     user_id="user_123",
-    backend_type="sqlite",
-    db_path="./chat_history.db",  # Local file
 )
 
 print(f"   ✓ Saved {result['saved_count']} messages to local SQLite file")
@@ -48,13 +46,12 @@ print(f"   ✓ Success: {result['success']}")
 print("\n2. SQLite In-Memory Storage:")
 print("   Best for: Testing, temporary data, demos")
 
-result = save_chat_history(
+store = ChatStorage.create("sqlite", db_path=":memory:")
+result = store.save_chat_history(
     thread_id="example_thread_memory",
-    auth_token=None,
+    credentials=None,
     messages=messages[:2],  # Fewer messages for demo
     user_id="user_456",
-    backend_type="sqlite",
-    db_path=":memory:",  # In-memory database
 )
 
 print(f"   ✓ Saved {result['saved_count']} messages to memory")
