@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Dict, Any
 
 from langchain.agents.middleware import AgentMiddleware, AgentState
+from langchain.messages import RemoveMessage
 from langchain_core.messages import AnyMessage
 from langgraph.runtime import Runtime
 from langgraph.typing import ContextT
@@ -44,20 +45,74 @@ class ToolFilter(AgentMiddleware[AgentState, ContextT]):
             model="openai:gpt-4o",
             tools=[...],
             middleware=[
-                ToolFilter(),   # Filter first
+                ToolFilter(),   # Filter before and after agent (default)
                 ChatSaver()     # Then save
             ],
             context_schema=ContextSchema,
         )
     """
 
-    def after_agent(
+    def __init__(self, when: str = "both"):
+        """
+        Initialize the tool filter middleware.
+
+        Args:
+            when: When to filter messages - 'before', 'after', or 'both' (default: 'both')
+        """
+        super().__init__()
+        if when not in ("before", "after", "both"):
+            raise ValueError(f"Invalid 'when' value: {when}. Must be 'before', 'after', or 'both'")
+        self.when = when
+
+    def _filter_tool_messages(
+        self,
+        state: AgentState,
+        stage: str,
+    ) -> Dict[str, Any] | None:
+        """
+        Filter tool messages from the message list using RemoveMessage.
+
+        Args:
+            messages: List of messages to filter
+            stage: Stage name for logging ('before_agent' or 'after_agent')
+
+        Returns:
+            Updated state dict with RemoveMessage instances or None if no filtering occurred
+        """
+        messages: list[AnyMessage] = state.get("messages", [])
+
+        if not messages:
+            return None
+
+        # Collect IDs of messages to remove
+        messages_to_remove = []
+        for msg in messages:
+            # Mark tool messages for removal
+            if msg.type == "tool":
+                logger.debug(f"[{stage}] Filtering out tool message: {msg.id}")
+                messages_to_remove.append(RemoveMessage(id=str(msg.id)))
+
+            # Mark AI messages that trigger tool calls for removal
+            elif msg.type == "ai":
+                finish_reason = getattr(msg, "response_metadata", {}).get("finish_reason", "")
+                if finish_reason == "tool_calls":
+                    logger.debug(f"[{stage}] Filtering out AI message with tool_calls: {msg.id}")
+                    messages_to_remove.append(RemoveMessage(id=str(msg.id)))
+
+        # Only return update if we have messages to remove
+        if messages_to_remove:
+            logger.debug(f"[{stage}] Marked {len(messages_to_remove)} tool-related messages for removal")
+            return {"messages": messages_to_remove}
+
+        return None
+
+    def before_agent(
         self,
         state: AgentState,
         runtime: Runtime[ContextT],
     ) -> Dict[str, Any] | None:
         """
-        Filter tool messages from the state.
+        Filter tool messages from the state before agent call.
 
         Args:
             state: Current agent state containing messages
@@ -66,35 +121,30 @@ class ToolFilter(AgentMiddleware[AgentState, ContextT]):
         Returns:
             Updated state dict with filtered messages
         """
-        messages: list[AnyMessage] = state.get("messages", [])
-
-        if not messages:
+        if self.when not in ("before", "both"):
             return None
 
-        # Filter out tool messages
-        filtered_messages = []
-        for msg in messages:
-            # Skip tool messages
-            if msg.type == "tool":
-                logger.debug(f"Filtering out tool message: {msg.id}")
-                continue
+        return self._filter_tool_messages(state, "before_agent")
 
-            # Skip AI messages that trigger tool calls
-            if msg.type == "ai":
-                finish_reason = getattr(msg, "response_metadata", {}).get("finish_reason", "")
-                if finish_reason == "tool_calls":
-                    logger.debug(f"Filtering out AI message with tool_calls: {msg.id}")
-                    continue
+    def after_agent(
+        self,
+        state: AgentState,
+        runtime: Runtime[ContextT],
+    ) -> Dict[str, Any] | None:
+        """
+        Filter tool messages from the state after agent call.
 
-            filtered_messages.append(msg)
+        Args:
+            state: Current agent state containing messages
+            runtime: Runtime context
 
-        # Only return update if we actually filtered something
-        if len(filtered_messages) < len(messages):
-            filtered_count = len(messages) - len(filtered_messages)
-            logger.debug(f"Filtered {filtered_count} tool-related messages")
-            return {"messages": filtered_messages}
+        Returns:
+            Updated state dict with filtered messages
+        """
+        if self.when not in ("after", "both"):
+            return None
 
-        return None
+        return self._filter_tool_messages(state, "after_agent")
 
 
 class ChatSaver(AgentMiddleware[AgentState, ContextT]):

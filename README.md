@@ -8,7 +8,7 @@ Middlewares for LangChain / LangGraph
 
 ## Overview
 
-Production-ready middleware for **LangChain v1** and **LangGraph v1** with multi-backend chat history persistence. Store conversations in SQLite, Supabase, or Firebase with zero configuration required.
+Production-ready middleware for **LangChain** and **LangGraph v1** with multi-backend chat history persistence. Store conversations in SQLite, Supabase, or Firebase with zero configuration required.
 
 **Key Features:**
 - ✅ **LangChain/LangGraph v1 Compatible**: Native middleware pattern support
