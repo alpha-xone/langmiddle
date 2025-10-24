@@ -50,8 +50,8 @@ class StorageContext:
         # Firebase - requires ID token
         context = ContextSchema(user_id="user-123", thread_id="thread-456", auth_token="eyJ...")
     """
-    user_id: str
     thread_id: str
+    user_id: Optional[str] = None
     auth_token: Optional[str] = None
 
 
