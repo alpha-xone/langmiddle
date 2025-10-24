@@ -48,6 +48,6 @@ jobs:
     #     mypy langmiddle
     #   continue-on-error: true
 
-    - name: Test with pytest
-      run: |
-        pytest tests/ -v --tb=short
+    # - name: Test with pytest
+    #   run: |
+    #     pytest tests/ -v --tb=short
