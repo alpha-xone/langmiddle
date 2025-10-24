@@ -38,13 +38,24 @@ pip install langmiddle[all]
 ## Quick Start - LangChain Middleware
 
 ```python
-from langmiddle import ChatSaver
+from langmiddle import ChatSaver, ToolFilter
+
 # Initialize middleware with desired backend
-# Use with LangChain Chat Models
 agent = create_agent(
     model="gpt-4o",
     tools=[],
-    middleware=[ChatSaver(backend="sqlite", db_path="./chat_history.db")],
+    middleware=[
+        ToolFilter(),
+        ChatSaver(backend="sqlite", db_path="./chat_history.db")
+    ],
+)
+
+agent.invoke(
+    input={"messages": [{"role": "user", "content": "Hello!"}]},
+    context={
+        "user_id": "user-123",
+        "session_id": "session-123",
+    }
 )
 ```
 

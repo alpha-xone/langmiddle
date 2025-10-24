@@ -22,7 +22,7 @@ __all__ = ["SQLiteStorageBackend"]
 class SQLiteStorageBackend(ChatStorageBackend):
     """SQLite implementation of chat storage backend."""
 
-    def __init__(self, db_path: str = "chat_history.db"):
+    def __init__(self, db_path: str = ":memory:"):
         """
         Initialize SQLite storage backend.
 

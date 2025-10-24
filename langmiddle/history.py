@@ -7,7 +7,7 @@ chat messages to the database after each model response.
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.messages import RemoveMessage
@@ -27,9 +27,32 @@ __all__ = ["ChatSaver", "ToolFilter"]
 
 @dataclass
 class ContextSchema:
+    """
+    Context schema for chat storage middleware.
+
+    This schema works across all storage backends (SQLite, Supabase, Firebase).
+
+    Attributes:
+        user_id: User identifier (required for all backends)
+        thread_id: Conversation thread identifier (required for all backends)
+        auth_token: Authentication token (optional, required only for Supabase/Firebase)
+                    - For Supabase: JWT token
+                    - For Firebase: ID token
+                    - For SQLite: Not used (pass None or empty string)
+
+    Examples:
+        # SQLite (in-memory or file) - no token needed
+        context = ContextSchema(user_id="user-123", thread_id="thread-456")
+
+        # Supabase - requires JWT token
+        context = ContextSchema(user_id="user-123", thread_id="thread-456", auth_token="eyJ...")
+
+        # Firebase - requires ID token
+        context = ContextSchema(user_id="user-123", thread_id="thread-456", auth_token="eyJ...")
+    """
     user_id: str
     thread_id: str
-    jwt_token: str
+    auth_token: Optional[str] = None
 
 
 class ToolFilter(AgentMiddleware[AgentState, ContextT]):
@@ -171,6 +194,11 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
             middleware=[ChatSaver()],
             context_schema=ContextSchema,
         )
+        # Invoke with context (auth_token optional for SQLite)
+        agent.invoke(
+            {"messages": [...]},
+            context=ContextSchema(user_id="user-123", thread_id="thread-123")
+        )
 
         # Using SQLite with file storage
         agent = create_agent(
@@ -180,7 +208,7 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
             context_schema=ContextSchema,
         )
 
-        # Using Supabase
+        # Using Supabase (requires auth_token)
         agent = create_agent(
             model="openai:gpt-4o",
             tools=[...],
@@ -191,18 +219,23 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
             )],
             context_schema=ContextSchema
         )
+        # Invoke with JWT token for Supabase
+        agent.invoke(
+            {"messages": [...]},
+            context=ContextSchema(user_id="user-123", thread_id="thread-123", auth_token="eyJ...")
+        )
 
-        # Using Firebase
+        # Using Firebase (requires auth_token as ID token)
         agent = create_agent(
             model="openai:gpt-4o",
             tools=[...],
             middleware=[ChatSaver(backend="firebase", credentials_path="/path/to/firebase-creds.json")],
             context_schema=ContextSchema,
         )
-
+        # Invoke with ID token for Firebase
         agent.invoke(
             {"messages": [...]},
-            context=ContextSchema(user_id="user-123", thread_id="thread-123", jwt_token="...")
+            context=ContextSchema(user_id="user-123", thread_id="thread-123", auth_token="firebase_id_token...")
         )
     """
 
@@ -254,7 +287,7 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
 
         Args:
             state: Current agent state containing messages
-            runtime: Runtime context with user_id, thread_id, and jwt_token
+            runtime: Runtime context with user_id, thread_id, and auth_token
 
         Returns:
             Dict with collected logs or None
@@ -267,9 +300,9 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
             return None
 
         graph_logs = []
-        thread_id = getattr(runtime.context, "thread_id", None)
-        jwt_token = getattr(runtime.context, "jwt_token", None)
         user_id = getattr(runtime.context, "user_id", None)
+        thread_id = getattr(runtime.context, "thread_id", None)
+        auth_token = getattr(runtime.context, "auth_token", None)
 
         if not thread_id:
             log_msg = (
@@ -293,13 +326,13 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
 
         # Prepare credentials based on available context
         credentials = {"user_id": user_id}
-        if jwt_token:
+        if auth_token:
             # Add token with appropriate key based on backend type
             backend_type = type(self.storage.backend).__name__.lower()
             if "firebase" in backend_type:
-                credentials["id_token"] = jwt_token
+                credentials["id_token"] = auth_token
             else:  # Supabase or other JWT-based backends
-                credentials["jwt_token"] = jwt_token
+                credentials["jwt_token"] = auth_token
 
         # Use the ChatStorage instance to save chat history
         result = self.storage.save_chat_history(
