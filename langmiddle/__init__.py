@@ -9,7 +9,7 @@ __author__ = "Alpha x1"
 __email__ = "alpha.xone@outlook.com"
 
 # Import your main middleware classes/functions here
-from .history import StorageContext, ToolFilter, ChatSaver
+from .history import ChatSaver, StorageContext, ToolFilter
 
 __all__ = [
     "StorageContext",
