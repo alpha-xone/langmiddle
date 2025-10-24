@@ -1,0 +1,16 @@
+# Development requirements
+pytest>=7.0
+black>=22.0
+isort>=5.0
+flake8>=4.0
+mypy>=0.950
+build>=0.8
+twine>=4.0
+
+# Documentation requirements
+sphinx>=4.0
+sphinx-rtd-theme>=1.0
+
+# Testing requirements
+pytest-cov>=3.0
+pytest-mock>=3.0

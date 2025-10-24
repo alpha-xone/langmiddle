@@ -1,0 +1,8 @@
+include README.md
+include LICENSE
+include requirements.txt
+include requirements-dev.txt
+recursive-include langmiddle *.py
+recursive-include langmiddle *.typed
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
