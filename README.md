@@ -16,6 +16,8 @@ Production-ready middleware for **LangChain** and **LangGraph v1** with multi-ba
 - � **Zero Config Start**: Defaults to in-memory SQLite—no setup needed
 - 🔄 **Multi-Backend Storage**: Switch between SQLite, Supabase, Firebase with one parameter
 - 🔒 **Production Ready**: JWT authentication, RLS support, type-safe
+- Token usage
+- Visibility in LangSmith
 
 ## Installation
 

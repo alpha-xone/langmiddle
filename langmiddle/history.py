@@ -22,11 +22,11 @@ logger = get_graph_logger(__name__)
 # Disable propagation to avoid duplicate logs (LangGraph handles the logging)
 logger._logger.propagate = False
 
-__all__ = ["ChatSaver", "ToolFilter"]
+__all__ = ["StorageContext", "ToolFilter", "ChatSaver"]
 
 
 @dataclass
-class ContextSchema:
+class StorageContext:
     """
     Context schema for chat storage middleware.
 
