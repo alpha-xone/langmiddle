@@ -1,65 +1,41 @@
-name: Publish to PyPI
+name: Build and Publish
 
 on:
-  release:
-    types: [published]
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to deploy to'
-        required: true
-        default: 'pypi'
-        type: choice
-        options:
-        - pypi
-        - testpypi
+    release:
+      types: [ created ]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
 
+  build-and-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.x'
+        python-version: '3.10'
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install build twine
+        pip install setuptools wheel twine build
 
     - name: Build package
-      run: python -m build
+      run: |
+        python -m build
 
-    - name: Check package
-      run: twine check dist/*
-
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: python-package-distributions
-        path: dist/
-
-  publish-to-pypi:
-    name: Publish to PyPI
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'pypi')
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/langmiddle
-    permissions:
-      id-token: write
-    steps:
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: python-package-distributions
-        path: dist/
-
-    - name: Publish to PyPI
+    - name: Publish package using GitHub Action
+      id: pypi-publish
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         password: ${{ secrets.PYPI_API_TOKEN }}
+      continue-on-error: true
+
+    - name: Publish with twine if GitHub Action fails
+      if: steps.pypi-publish.outcome == 'failure'
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: |
+        python -m twine upload dist/*
