@@ -61,7 +61,9 @@ class ToolFilter(AgentMiddleware[AgentState, ContextT]):
         """
         super().__init__()
         if when not in ("before", "after", "both"):
-            raise ValueError(f"Invalid 'when' value: {when}. Must be 'before', 'after', or 'both'")
+            raise ValueError(
+                f"Invalid 'when' value: {when}. Must be 'before', 'after', or 'both'"
+            )
         self.when = when
 
     def _filter_tool_messages(
@@ -94,14 +96,20 @@ class ToolFilter(AgentMiddleware[AgentState, ContextT]):
 
             # Mark AI messages that trigger tool calls for removal
             elif msg.type == "ai":
-                finish_reason = getattr(msg, "response_metadata", {}).get("finish_reason", "")
+                finish_reason = getattr(msg, "response_metadata", {}).get(
+                    "finish_reason", ""
+                )
                 if finish_reason == "tool_calls":
-                    logger.debug(f"[{stage}] Filtering out AI message with tool_calls: {msg.id}")
+                    logger.debug(
+                        f"[{stage}] Filtering out AI message with tool_calls: {msg.id}"
+                    )
                     messages_to_remove.append(RemoveMessage(id=str(msg.id)))
 
         # Only return update if we have messages to remove
         if messages_to_remove:
-            logger.debug(f"[{stage}] Marked {len(messages_to_remove)} tool-related messages for removal")
+            logger.debug(
+                f"[{stage}] Marked {len(messages_to_remove)} tool-related messages for removal"
+            )
             return {"messages": messages_to_remove}
 
         return None
@@ -203,7 +211,7 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         save_interval: int = 1,
         extract_interval: int = 5,
         backend: str = "sqlite",
-        **backend_kwargs
+        **backend_kwargs,
     ):
         """
         Initialize chat history middleware.
@@ -220,7 +228,9 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         self.save_interval = save_interval
         self._model_call_count = 0
         self._saved_msg_ids = set()  # Persistent tracking of saved message IDs
-        self._logged_messages = set()  # Track all log messages already displayed to avoid duplicates
+        self._logged_messages = (
+            set()
+        )  # Track all log messages already displayed to avoid duplicates
 
         # Set default db_path for SQLite if not provided
         if backend == "sqlite" and "db_path" not in backend_kwargs:
@@ -265,7 +275,9 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         user_id = getattr(runtime.context, "user_id", None)
 
         if not thread_id:
-            log_msg = "[after_agent] Missing thread_id in context; cannot save chat history."
+            log_msg = (
+                "[after_agent] Missing thread_id in context; cannot save chat history."
+            )
             if log_msg not in self._logged_messages:
                 graph_logs.append(logger.error(log_msg))
                 self._logged_messages.add(log_msg)

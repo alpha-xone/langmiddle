@@ -101,7 +101,7 @@ class ChatStorage:
                 "saved_count": 0,
                 "errors": ["thread_id is required"],
                 "user_id": None,
-                "saved_msg_ids": saved_msg_ids or set()
+                "saved_msg_ids": saved_msg_ids or set(),
             }
 
         if not messages:
@@ -111,7 +111,7 @@ class ChatStorage:
                 "saved_count": 0,
                 "errors": [],
                 "user_id": user_id,
-                "saved_msg_ids": saved_msg_ids or set()
+                "saved_msg_ids": saved_msg_ids or set(),
             }
 
         # Authenticate with backend
@@ -121,7 +121,7 @@ class ChatStorage:
                 "saved_count": 0,
                 "errors": ["Authentication failed"],
                 "user_id": user_id,
-                "saved_msg_ids": saved_msg_ids or set()
+                "saved_msg_ids": saved_msg_ids or set(),
             }
 
         # Extract user ID if not provided
@@ -134,7 +134,7 @@ class ChatStorage:
                 "saved_count": 0,
                 "errors": ["Could not determine user_id"],
                 "user_id": None,
-                "saved_msg_ids": saved_msg_ids or set()
+                "saved_msg_ids": saved_msg_ids or set(),
             }
 
         # Validate user_id
@@ -144,14 +144,16 @@ class ChatStorage:
                 "saved_count": 0,
                 "errors": [f"Invalid user_id: {user_id}"],
                 "user_id": user_id,
-                "saved_msg_ids": saved_msg_ids or set()
+                "saved_msg_ids": saved_msg_ids or set(),
             }
 
         # Get existing message IDs if not provided
         if saved_msg_ids is None:
             saved_msg_ids = self.backend.get_existing_message_ids(thread_id)
         else:
-            logger.debug(f"Using provided saved_msg_ids set with {len(saved_msg_ids)} existing messages")
+            logger.debug(
+                f"Using provided saved_msg_ids set with {len(saved_msg_ids)} existing messages"
+            )
 
         # Filter out already saved messages
         new_messages = [msg for msg in messages if msg.id not in saved_msg_ids]
@@ -165,7 +167,7 @@ class ChatStorage:
                 "user_id": user_id,
                 "total_messages": len(messages),
                 "skipped_count": len(messages),
-                "saved_msg_ids": saved_msg_ids
+                "saved_msg_ids": saved_msg_ids,
             }
 
         # Ensure thread exists
@@ -175,14 +177,14 @@ class ChatStorage:
                 "saved_count": 0,
                 "errors": ["Could not ensure thread exists"],
                 "user_id": user_id,
-                "saved_msg_ids": saved_msg_ids
+                "saved_msg_ids": saved_msg_ids,
             }
 
         # Save messages
         result = self.backend.save_messages(thread_id, user_id, new_messages)
 
         # Update saved message IDs for successfully saved messages
-        successfully_saved = new_messages[:result["saved_count"]]
+        successfully_saved = new_messages[: result["saved_count"]]
         for msg in successfully_saved:
             saved_msg_ids.add(msg.id)
 
@@ -196,7 +198,7 @@ class ChatStorage:
             "user_id": user_id,
             "total_messages": len(messages),
             "skipped_count": len(messages) - len(new_messages),
-            "saved_msg_ids": saved_msg_ids
+            "saved_msg_ids": saved_msg_ids,
         }
 
 
@@ -207,7 +209,7 @@ def save_chat_history(
     user_id: Optional[str] = None,
     saved_msg_ids: Optional[set] = None,
     backend_type: str = "supabase",
-    **backend_kwargs
+    **backend_kwargs,
 ) -> Dict[str, Any]:
     """
     Backward compatible function for saving chat history.
@@ -243,7 +245,7 @@ def save_chat_history(
             credentials=credentials,
             messages=messages,
             user_id=user_id,
-            saved_msg_ids=saved_msg_ids
+            saved_msg_ids=saved_msg_ids,
         )
 
     except Exception as e:
@@ -253,5 +255,5 @@ def save_chat_history(
             "saved_count": 0,
             "errors": [f"Storage system error: {e}"],
             "user_id": user_id,
-            "saved_msg_ids": saved_msg_ids or set()
+            "saved_msg_ids": saved_msg_ids or set(),
         }

@@ -30,7 +30,7 @@ class SupabaseStorageBackend(ChatStorageBackend):
         supabase_key: Optional[str] = None,
         connection_string: Optional[str] = None,
         auto_create_tables: bool = False,
-        load_from_env: bool = True
+        load_from_env: bool = True,
     ):
         """
         Initialize Supabase storage backend.
@@ -81,6 +81,7 @@ class SupabaseStorageBackend(ChatStorageBackend):
         if load_from_env and (not supabase_url or not supabase_key):
             try:
                 from dotenv import load_dotenv
+
                 load_dotenv()
             except ImportError:
                 logger.debug("python-dotenv not installed, skipping .env file loading")
@@ -153,23 +154,27 @@ class SupabaseStorageBackend(ChatStorageBackend):
             cursor = conn.cursor()
 
             # Check if tables already exist
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT EXISTS (
                     SELECT FROM information_schema.tables
                     WHERE table_schema = 'public'
                     AND table_name = 'chat_threads'
                 );
-            """)
+            """
+            )
             result = cursor.fetchone()
             threads_exists = result[0] if result else False
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT EXISTS (
                     SELECT FROM information_schema.tables
                     WHERE table_schema = 'public'
                     AND table_name = 'chat_messages'
                 );
-            """)
+            """
+            )
             result = cursor.fetchone()
             messages_exists = result[0] if result else False
 
@@ -182,7 +187,8 @@ class SupabaseStorageBackend(ChatStorageBackend):
             logger.info("Creating Supabase tables from SQL schema files...")
 
             # Create trigger function first (required by chat_threads)
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE OR REPLACE FUNCTION update_updated_at_column()
                 RETURNS TRIGGER AS $$
                 BEGIN
@@ -190,7 +196,8 @@ class SupabaseStorageBackend(ChatStorageBackend):
                     RETURN NEW;
                 END;
                 $$ language 'plpgsql';
-            """)
+            """
+            )
             logger.debug("Created update_updated_at_column trigger function")
 
             # Execute SQL files in order (threads first, then messages due to foreign key)
@@ -202,7 +209,7 @@ class SupabaseStorageBackend(ChatStorageBackend):
                     logger.warning(f"SQL file not found: {sql_path}, skipping")
                     continue
 
-                with open(sql_path, 'r', encoding='utf-8') as f:
+                with open(sql_path, "r", encoding="utf-8") as f:
                     sql_content = f.read()
 
                 cursor.execute(sql_content)
@@ -289,8 +296,7 @@ class SupabaseStorageBackend(ChatStorageBackend):
         """
         try:
             result = (
-                self.client
-                .table("chat_messages")
+                self.client.table("chat_messages")
                 .select("id")
                 .eq("thread_id", thread_id)
                 .execute()
@@ -302,7 +308,9 @@ class SupabaseStorageBackend(ChatStorageBackend):
                     for msg in result.data
                     if isinstance(msg, dict) and "id" in msg
                 }
-                logger.debug(f"Found {len(message_ids)} existing messages for thread {thread_id}")
+                logger.debug(
+                    f"Found {len(message_ids)} existing messages for thread {thread_id}"
+                )
                 return message_ids
             return set()
 
@@ -322,13 +330,22 @@ class SupabaseStorageBackend(ChatStorageBackend):
             True if thread exists or was created
         """
         try:
-            result = self.client.table("chat_threads").upsert({
-                "id": thread_id,
-                "user_id": user_id,
-            }, on_conflict="id").execute()
+            result = (
+                self.client.table("chat_threads")
+                .upsert(
+                    {
+                        "id": thread_id,
+                        "user_id": user_id,
+                    },
+                    on_conflict="id",
+                )
+                .execute()
+            )
 
             if not result.data:
-                logger.warning(f"Chat thread upsert returned no data for thread {thread_id}")
+                logger.warning(
+                    f"Chat thread upsert returned no data for thread {thread_id}"
+                )
                 return False
             else:
                 logger.debug(f"Chat thread {thread_id} ensured in database")
@@ -339,10 +356,7 @@ class SupabaseStorageBackend(ChatStorageBackend):
             return False
 
     def save_messages(
-        self,
-        thread_id: str,
-        user_id: str,
-        messages: List[AnyMessage]
+        self, thread_id: str, user_id: str, messages: List[AnyMessage]
     ) -> Dict[str, Any]:
         """
         Save messages to Supabase.
@@ -372,9 +386,11 @@ class SupabaseStorageBackend(ChatStorageBackend):
                 }
 
                 # Save to database
-                result = self.client.table("chat_messages").upsert(
-                    msg_data, on_conflict="id"
-                ).execute()
+                result = (
+                    self.client.table("chat_messages")
+                    .upsert(msg_data, on_conflict="id")
+                    .execute()
+                )
 
                 time.sleep(0.05)  # Small delay to avoid rate limiting
 
@@ -389,7 +405,4 @@ class SupabaseStorageBackend(ChatStorageBackend):
                 errors.append(f"Error saving message {msg.id}: {e}")
                 logger.error(f"Error saving message {msg.id}: {e}")
 
-        return {
-            "saved_count": saved_count,
-            "errors": errors
-        }
+        return {"saved_count": saved_count, "errors": errors}

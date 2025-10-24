@@ -47,12 +47,12 @@ def main():
             sys.exit(1)
 
         # Test importing the package
-        test_script = '''
+        test_script = """
 import langmiddle
 print(f"Successfully imported langmiddle version {langmiddle.__version__}")
 print(f"Author: {langmiddle.__author__}")
 print(f"Email: {langmiddle.__email__}")
-'''
+"""
 
         result = run_command(f'"{python_exe}" -c "{test_script}"')
         if result.returncode != 0:

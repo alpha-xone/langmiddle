@@ -68,10 +68,7 @@ print("\n🔨 Creating database tables...")
 print("   This is safe to run multiple times (idempotent)")
 
 try:
-    storage = ChatStorage.create(
-        "supabase",
-        auto_create_tables=True
-    )
+    storage = ChatStorage.create("supabase", auto_create_tables=True)
 
     print("\n✅ Setup complete!")
     print("\n📝 Next steps:")

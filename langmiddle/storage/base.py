@@ -74,10 +74,7 @@ class ChatStorageBackend(ABC):
 
     @abstractmethod
     def save_messages(
-        self,
-        thread_id: str,
-        user_id: str,
-        messages: List[AnyMessage]
+        self, thread_id: str, user_id: str, messages: List[AnyMessage]
     ) -> Dict[str, Any]:
         """
         Save messages to storage.

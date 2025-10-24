@@ -19,6 +19,7 @@ try:
     from firebase_admin import auth, firestore
     from google.cloud.firestore import SERVER_TIMESTAMP
     from google.cloud.firestore_v1.base_query import FieldFilter
+
     FIREBASE_AVAILABLE = True
 except ImportError:
     FIREBASE_AVAILABLE = False
@@ -144,7 +145,9 @@ class FirebaseStorageBackend(ChatStorageBackend):
             query = messages_ref.where(filter=filter_obj)
             docs = query.stream()
             message_ids = {doc.id for doc in docs}
-            logger.debug(f"Found {len(message_ids)} existing messages for thread {thread_id}")
+            logger.debug(
+                f"Found {len(message_ids)} existing messages for thread {thread_id}"
+            )
             return message_ids
         except Exception as e:
             logger.error(f"Error fetching existing messages: {e}")
@@ -167,10 +170,9 @@ class FirebaseStorageBackend(ChatStorageBackend):
 
         try:
             thread_ref = self.db.collection("chat_threads").document(thread_id)
-            thread_ref.set({
-                "user_id": user_id,
-                "created_at": SERVER_TIMESTAMP
-            }, merge=True)
+            thread_ref.set(
+                {"user_id": user_id, "created_at": SERVER_TIMESTAMP}, merge=True
+            )
             logger.debug(f"Chat thread {thread_id} ensured in Firestore")
             return True
         except Exception as e:
@@ -178,10 +180,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
             return False
 
     def save_messages(
-        self,
-        thread_id: str,
-        user_id: str,
-        messages: List[AnyMessage]
+        self, thread_id: str, user_id: str, messages: List[AnyMessage]
     ) -> Dict[str, Any]:
         """
         Save messages to Firestore using batch operations.
@@ -195,10 +194,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
             Dict with 'saved_count' and 'errors' keys
         """
         if not FIREBASE_AVAILABLE:
-            return {
-                "saved_count": 0,
-                "errors": ["Firebase not available"]
-            }
+            return {"saved_count": 0, "errors": ["Firebase not available"]}
 
         saved_count = 0
         errors = []
@@ -219,7 +215,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
                         "role": self.TYPE_TO_ROLE.get(msg.type, msg.type),
                         "metadata": getattr(msg, "response_metadata", {}),
                         "usage_metadata": getattr(msg, "usage_metadata", {}),
-                        "created_at": SERVER_TIMESTAMP
+                        "created_at": SERVER_TIMESTAMP,
                     }
 
                     batch.set(msg_ref, msg_data, merge=True)
@@ -241,7 +237,4 @@ class FirebaseStorageBackend(ChatStorageBackend):
             logger.error(f"Error committing batch to Firestore: {e}")
             saved_count = 0
 
-        return {
-            "saved_count": saved_count,
-            "errors": errors
-        }
+        return {"saved_count": saved_count, "errors": errors}

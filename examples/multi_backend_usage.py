@@ -13,9 +13,17 @@ from langmiddle.utils.storage import save_chat_history
 # Create some sample messages
 messages = [
     HumanMessage(content="Hello, can you help me with my project?", id="msg_1"),
-    AIMessage(content="Of course! I'd be happy to help. What kind of project are you working on?", id="msg_2"),
-    HumanMessage(content="I'm building a chat application with message persistence.", id="msg_3"),
-    AIMessage(content="Great! You can use different storage backends based on your needs.", id="msg_4")
+    AIMessage(
+        content="Of course! I'd be happy to help. What kind of project are you working on?",
+        id="msg_2",
+    ),
+    HumanMessage(
+        content="I'm building a chat application with message persistence.", id="msg_3"
+    ),
+    AIMessage(
+        content="Great! You can use different storage backends based on your needs.",
+        id="msg_4",
+    ),
 ]
 
 print("=== LangMiddle Multi-Backend Storage Examples ===\n")
@@ -30,7 +38,7 @@ result = save_chat_history(
     messages=messages,
     user_id="user_123",
     backend_type="sqlite",
-    db_path="./chat_history.db"  # Local file
+    db_path="./chat_history.db",  # Local file
 )
 
 print(f"   ✓ Saved {result['saved_count']} messages to local SQLite file")
@@ -46,7 +54,7 @@ result = save_chat_history(
     messages=messages[:2],  # Fewer messages for demo
     user_id="user_456",
     backend_type="sqlite",
-    db_path=":memory:"  # In-memory database
+    db_path=":memory:",  # In-memory database
 )
 
 print(f"   ✓ Saved {result['saved_count']} messages to memory")
@@ -70,7 +78,8 @@ print(f"   ✓ Success: {result['success']}")
 print("\n4. Production Backend Examples:")
 print("   (Uncomment and configure credentials to use)")
 
-print("""
+print(
+    """
 # Supabase (Cloud PostgreSQL with RLS)
 # Best for: Production web apps, multi-user systems, real-time features
 
@@ -93,13 +102,15 @@ result = save_chat_history(
     backend_type="firebase",
     credentials_path="path/to/firebase-credentials.json"
 )
-""")
+"""
+)
 
 # Example 5: Middleware Integration
 print("\n5. Middleware Integration:")
 print("   (Example of how ChatSaver uses the storage system)")
 
-print("""
+print(
+    """
 # In your LangGraph application:
 from langmiddle import ChatSaver
 
@@ -111,7 +122,8 @@ history_middleware = ChatSaver(
 
 # Use in your graph
 graph = graph.with_middleware([history_middleware])
-""")
+"""
+)
 
 print("\n=== Benefits of Multi-Backend Approach ===")
 print("✓ Same API across all storage backends")

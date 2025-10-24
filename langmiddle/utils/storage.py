@@ -58,7 +58,7 @@ def save_chat_history(
     user_id: Optional[str] = None,
     saved_msg_ids: Optional[set] = None,
     backend_type: str = "supabase",
-    **backend_kwargs
+    **backend_kwargs,
 ) -> Dict[str, Any]:
     """
     Save chat history to storage backend.
@@ -140,7 +140,7 @@ def save_chat_history(
             user_id=user_id,
             saved_msg_ids=saved_msg_ids,
             backend_type=backend_type,
-            **backend_kwargs
+            **backend_kwargs,
         )
     except Exception as e:
         logger.error(f"Error in save_chat_history: {e}")
@@ -149,5 +149,5 @@ def save_chat_history(
             "saved_count": 0,
             "errors": [f"Storage error: {e}"],
             "user_id": user_id,
-            "saved_msg_ids": saved_msg_ids or set()
+            "saved_msg_ids": saved_msg_ids or set(),
         }

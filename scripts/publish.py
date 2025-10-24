@@ -26,8 +26,12 @@ def main():
         sys.exit(1)
 
     print("Cleaning previous builds...")
-    run_command("python -c \"import shutil; shutil.rmtree('dist', ignore_errors=True)\"")
-    run_command("python -c \"import shutil; shutil.rmtree('build', ignore_errors=True)\"")
+    run_command(
+        "python -c \"import shutil; shutil.rmtree('dist', ignore_errors=True)\""
+    )
+    run_command(
+        "python -c \"import shutil; shutil.rmtree('build', ignore_errors=True)\""
+    )
 
     print("Building package...")
     run_command("python -m build")
@@ -37,7 +41,7 @@ def main():
 
     # Ask for confirmation before uploading
     response = input("Upload to PyPI? (y/N): ").strip().lower()
-    if response not in ['y', 'yes']:
+    if response not in ["y", "yes"]:
         print("Upload cancelled.")
         sys.exit(0)
 

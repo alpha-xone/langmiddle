@@ -18,23 +18,23 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record):
         log_entry = {
-            'timestamp': datetime.utcnow().isoformat() + 'Z',
-            'level': record.levelname,
-            'logger': record.name,
-            'message': record.getMessage(),
-            'module': record.module,
-            'function': record.funcName,
-            'line': record.lineno,
-            'process': record.process,
-            'thread': record.thread
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "module": record.module,
+            "function": record.funcName,
+            "line": record.lineno,
+            "process": record.process,
+            "thread": record.thread,
         }
 
         # Add exception info if present
         if record.exc_info:
-            log_entry['exception'] = self.formatException(record.exc_info)
+            log_entry["exception"] = self.formatException(record.exc_info)
 
         # Add extra fields if present
-        for attr in ['user_id', 'request_id', 'thread_id']:
+        for attr in ["user_id", "request_id", "thread_id"]:
             if hasattr(record, attr):
                 log_entry[attr] = getattr(record, attr)
 
@@ -46,12 +46,12 @@ class ColoredFormatter(logging.Formatter):
 
     # ANSI color codes
     COLORS = {
-        'DEBUG': '\033[36m',     # Cyan
-        'INFO': '\033[32m',      # Green
-        'WARNING': '\033[33m',   # Yellow
-        'ERROR': '\033[31m',     # Red
-        'CRITICAL': '\033[35m',  # Magenta
-        'RESET': '\033[0m'       # Reset
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
+        "WARNING": "\033[33m",  # Yellow
+        "ERROR": "\033[31m",  # Red
+        "CRITICAL": "\033[35m",  # Magenta
+        "RESET": "\033[0m",  # Reset
     }
 
     def format(self, record):
@@ -102,19 +102,19 @@ class LoggerWithCapture:
         return message  # Fallback
 
     def debug(self, message: str) -> str:
-        return self._log_and_return('DEBUG', message)
+        return self._log_and_return("DEBUG", message)
 
     def info(self, message: str) -> str:
-        return self._log_and_return('INFO', message)
+        return self._log_and_return("INFO", message)
 
     def warning(self, message: str) -> str:
-        return self._log_and_return('WARNING', message)
+        return self._log_and_return("WARNING", message)
 
     def error(self, message: str) -> str:
-        return self._log_and_return('ERROR', message)
+        return self._log_and_return("ERROR", message)
 
     def critical(self, message: str) -> str:
-        return self._log_and_return('CRITICAL', message)
+        return self._log_and_return("CRITICAL", message)
 
     def get_all_messages(self) -> List[str]:
         """Get all captured messages."""
@@ -131,13 +131,13 @@ class LoggerWithCapture:
 
 def get_environment() -> str:
     """Get the current environment (development/production)."""
-    return os.getenv('ENVIRONMENT', os.getenv('ENV', 'development')).lower()
+    return os.getenv("ENVIRONMENT", os.getenv("ENV", "development")).lower()
 
 
 def is_production() -> bool:
     """Check if running in production environment."""
     env = get_environment()
-    return env in ['production', 'prod', 'live']
+    return env in ["production", "prod", "live"]
 
 
 def setup_logger(
@@ -147,7 +147,7 @@ def setup_logger(
     console_output: Optional[bool] = None,
     format_string: Optional[str] = None,
     max_bytes: int = 50 * 1024 * 1024,  # 50MB
-    backup_count: int = 10
+    backup_count: int = 10,
 ) -> logging.Logger:
     """
     Set up a logger with console and optional file output.
@@ -212,9 +212,7 @@ def setup_logger(
         if prod_env:
             # Use rotating file handler in production
             file_handler = logging.handlers.RotatingFileHandler(
-                log_file,
-                maxBytes=max_bytes,
-                backupCount=backup_count
+                log_file, maxBytes=max_bytes, backupCount=backup_count
             )
         else:
             # Use regular file handler in development
@@ -225,7 +223,10 @@ def setup_logger(
         if prod_env and format_string is None:
             file_formatter = JSONFormatter()
         else:
-            file_formatter = logging.Formatter(format_string or "%(asctime)s | %(name)s | %(levelname)s | %(funcName)s:%(lineno)d | %(message)s")
+            file_formatter = logging.Formatter(
+                format_string
+                or "%(asctime)s | %(name)s | %(levelname)s | %(funcName)s:%(lineno)d | %(message)s"
+            )
 
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
@@ -263,7 +264,11 @@ def get_graph_logger(module_name: str) -> LoggerWithCapture:
         level="WARNING" if prod_env else "INFO",
         log_file=str(log_file),
         console_output=not prod_env,  # Disable console in production
-        format_string="%(asctime)s | %(name)s | %(levelname)s | %(funcName)s:%(lineno)d | %(message)s" if not prod_env else None
+        format_string=(
+            "%(asctime)s | %(name)s | %(levelname)s | %(funcName)s:%(lineno)d | %(message)s"
+            if not prod_env
+            else None
+        ),
     )
 
     # Create capture handler with the same format
@@ -273,7 +278,9 @@ def get_graph_logger(module_name: str) -> LoggerWithCapture:
     if prod_env:
         capture_formatter = JSONFormatter()
     else:
-        capture_formatter = logging.Formatter("%(asctime)s | %(name)s | %(levelname)s | %(funcName)s:%(lineno)d | %(message)s")
+        capture_formatter = logging.Formatter(
+            "%(asctime)s | %(name)s | %(levelname)s | %(funcName)s:%(lineno)d | %(message)s"
+        )
 
     capture_handler.setFormatter(capture_formatter)
     base_logger.addHandler(capture_handler)
