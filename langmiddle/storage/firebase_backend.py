@@ -4,20 +4,21 @@ Firebase Firestore storage backend implementation.
 This module provides Firebase Firestore-based implementation of the chat storage interface.
 """
 
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
+
 from langchain_core.messages import AnyMessage
 
-from .base import ChatStorageBackend
 from ..utils.logging import get_graph_logger
+from .base import ChatStorageBackend
 
 logger = get_graph_logger(__name__)
 
 # Try to import Firebase dependencies
 try:
     import firebase_admin
-    from firebase_admin import firestore, auth
-    from google.cloud.firestore_v1.base_query import FieldFilter
+    from firebase_admin import auth, firestore
     from google.cloud.firestore import SERVER_TIMESTAMP
+    from google.cloud.firestore_v1.base_query import FieldFilter
     FIREBASE_AVAILABLE = True
 except ImportError:
     FIREBASE_AVAILABLE = False

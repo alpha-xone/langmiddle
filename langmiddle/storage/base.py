@@ -6,7 +6,8 @@ to ensure consistency across different database systems.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
+
 from langchain_core.messages import AnyMessage
 
 __all__ = ["ChatStorageBackend"]

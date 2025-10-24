@@ -17,6 +17,7 @@ import sys
 
 try:
     from dotenv import load_dotenv
+
     from langmiddle.storage import ChatStorage
 except ImportError:
     print("❌ Error: Required packages not installed")

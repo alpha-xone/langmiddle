@@ -5,9 +5,10 @@ This example demonstrates how to use the langmiddle storage system
 with different backends: Supabase, SQLite, and Firebase.
 """
 
-from langchain_core.messages import HumanMessage, AIMessage
-from langmiddle.utils.storage import save_chat_history
+from langchain_core.messages import AIMessage, HumanMessage
+
 from langmiddle.storage import ChatStorage
+from langmiddle.utils.storage import save_chat_history
 
 # Create some sample messages
 messages = [

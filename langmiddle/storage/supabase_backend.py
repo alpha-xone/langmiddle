@@ -7,12 +7,13 @@ This module provides Supabase-specific implementation of the chat storage interf
 import os
 import time
 from pathlib import Path
-from typing import Optional, Dict, Any, List
-from jose import jwt, JWTError
+from typing import Any, Dict, List, Optional
+
+from jose import JWTError, jwt
 from langchain_core.messages import AnyMessage
 
-from .base import ChatStorageBackend
 from ..utils.logging import get_graph_logger
+from .base import ChatStorageBackend
 
 logger = get_graph_logger(__name__)
 

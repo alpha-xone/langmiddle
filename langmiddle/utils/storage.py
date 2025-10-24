@@ -7,12 +7,14 @@ such as saving chat history, querying threads, and managing user data.
 Backward compatibility wrapper for the new storage backend system.
 """
 
-from typing import Optional, Dict, Any, List
-from jose import jwt, JWTError
+from typing import Any, Dict, List, Optional
 
-from ..utils.logging import get_graph_logger
-from ..storage import ChatStorage, save_chat_history as new_save_chat_history
+from jose import JWTError, jwt
 from langchain_core.messages import AnyMessage
+
+from ..storage import ChatStorage
+from ..storage import save_chat_history as new_save_chat_history
+from ..utils.logging import get_graph_logger
 
 logger = get_graph_logger(__name__)
 

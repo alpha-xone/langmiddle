@@ -7,7 +7,7 @@ chat messages to the database after each model response.
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, Any
+from typing import Any, Dict
 
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.messages import RemoveMessage
@@ -15,8 +15,8 @@ from langchain_core.messages import AnyMessage
 from langgraph.runtime import Runtime
 from langgraph.typing import ContextT
 
-from .utils.logging import get_graph_logger
 from .storage import ChatStorage
+from .utils.logging import get_graph_logger
 
 logger = get_graph_logger(__name__)
 # Disable propagation to avoid duplicate logs (LangGraph handles the logging)

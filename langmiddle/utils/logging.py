@@ -1,11 +1,12 @@
+import json
 import logging
 import logging.handlers
-import sys
 import os
-import json
-from pathlib import Path
-from typing import Optional, List
+import sys
 from datetime import datetime
+from pathlib import Path
+from typing import List, Optional
+
 from dotenv import load_dotenv
 
 load_dotenv()

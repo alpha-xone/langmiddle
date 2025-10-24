@@ -4,14 +4,15 @@ SQLite storage backend implementation.
 This module provides a local SQLite-based implementation of the chat storage interface.
 """
 
-import sqlite3
 import json
+import sqlite3
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
+
 from langchain_core.messages import AnyMessage
 
-from .base import ChatStorageBackend
 from ..utils.logging import get_graph_logger
+from .base import ChatStorageBackend
 
 logger = get_graph_logger(__name__)
 

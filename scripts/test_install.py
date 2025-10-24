@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Script to test package installation from PyPI"""
 
+import os
 import subprocess
 import sys
 import tempfile
-import os
 
 
 def run_command(cmd, cwd=None):
