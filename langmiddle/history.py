@@ -1,22 +1,24 @@
-"""
-Chat history middleware for saving conversations to various storage backends.
+"""Chat history middleware for saving conversations to various storage backends.
 
-This module uses LangChain v1 middleware pattern to automatically save
-chat messages to the database after each model response.
+This module provides LangChain v1 middleware for automatically persisting
+chat messages to databases (SQLite, Supabase, Firebase) after each model response.
 """
+
+from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.messages import RemoveMessage
 from langchain_core.messages import AnyMessage
-from langgraph.runtime import Runtime
-from langgraph.typing import ContextT
 
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
+
+if TYPE_CHECKING:
+    from langgraph.runtime import Runtime
 
 logger = get_graph_logger(__name__)
 # Disable propagation to avoid duplicate logs (LangGraph handles the logging)
@@ -27,35 +29,52 @@ __all__ = ["StorageContext", "ToolFilter", "ChatSaver"]
 
 @dataclass
 class StorageContext:
-    """
-    Context schema for chat storage middleware.
+    """Context schema for chat storage middleware.
 
     This schema works across all storage backends (SQLite, Supabase, Firebase).
 
     Attributes:
-        user_id: User identifier (required for all backends)
-        thread_id: Conversation thread identifier (required for all backends)
-        auth_token: Authentication token (optional, required only for Supabase/Firebase)
-                    - For Supabase: JWT token
-                    - For Firebase: ID token
-                    - For SQLite: Not used (pass None or empty string)
+        thread_id: Conversation thread identifier (required for all backends).
+        user_id: User identifier (optional, used for multi-tenant scenarios).
+        auth_token: Authentication token (optional, required only for Supabase/Firebase).
+            - For Supabase: JWT token
+            - For Firebase: ID token
+            - For SQLite: Not used (pass None or empty string)
 
     Examples:
-        # SQLite (in-memory or file) - no token needed
-        context = ContextSchema(user_id="user-123", thread_id="thread-456")
+        SQLite (in-memory or file) - no token needed:
 
-        # Supabase - requires JWT token
-        context = ContextSchema(user_id="user-123", thread_id="thread-456", auth_token="eyJ...")
+        ```python
+        context = StorageContext(thread_id="thread-456", user_id="user-123")
+        ```
 
-        # Firebase - requires ID token
-        context = ContextSchema(user_id="user-123", thread_id="thread-456", auth_token="eyJ...")
+        Supabase - requires JWT token:
+
+        ```python
+        context = StorageContext(
+            thread_id="thread-456",
+            user_id="user-123",
+            auth_token="eyJ..."
+        )
+        ```
+
+        Firebase - requires ID token:
+
+        ```python
+        context = StorageContext(
+            thread_id="thread-456",
+            user_id="user-123",
+            auth_token="firebase_id_token..."
+        )
+        ```
     """
+
     thread_id: str
-    user_id: Optional[str] = None
-    auth_token: Optional[str] = None
+    user_id: str | None = None
+    auth_token: str | None = None
 
 
-class ToolFilter(AgentMiddleware[AgentState, ContextT]):
+class ToolFilter(AgentMiddleware[AgentState, Any]):
     """
     Middleware to filter out tool messages from chat history.
 
@@ -93,7 +112,7 @@ class ToolFilter(AgentMiddleware[AgentState, ContextT]):
         self,
         state: AgentState,
         stage: str,
-    ) -> Dict[str, Any] | None:
+    ) -> dict[str, Any] | None:
         """
         Filter tool messages from the message list using RemoveMessage.
 
@@ -140,8 +159,8 @@ class ToolFilter(AgentMiddleware[AgentState, ContextT]):
     def before_agent(
         self,
         state: AgentState,
-        runtime: Runtime[ContextT],
-    ) -> Dict[str, Any] | None:
+        runtime: Runtime[Any],
+    ) -> dict[str, Any] | None:
         """
         Filter tool messages from the state before agent call.
 
@@ -160,8 +179,8 @@ class ToolFilter(AgentMiddleware[AgentState, ContextT]):
     def after_agent(
         self,
         state: AgentState,
-        runtime: Runtime[ContextT],
-    ) -> Dict[str, Any] | None:
+        runtime: Runtime[Any],
+    ) -> dict[str, Any] | None:
         """
         Filter tool messages from the state after agent call.
 
@@ -178,37 +197,44 @@ class ToolFilter(AgentMiddleware[AgentState, ContextT]):
         return self._filter_tool_messages(state, "after_agent")
 
 
-class ChatSaver(AgentMiddleware[AgentState, ContextT]):
-    """
-    Middleware to save chat history to various storage backends after each model response.
+class ChatSaver(AgentMiddleware[AgentState, Any]):
+    """Middleware to save chat history to various storage backends after each model response.
 
     This middleware automatically captures and persists conversation history
     to the database, including message content, and metadata.
     Supports multiple storage backends: SQLite (default), Supabase, and Firebase.
 
     Usage:
-        # Using SQLite in-memory (default - easiest to get started)
+        Using SQLite in-memory (default - easiest to get started):
+
+        ```python
         agent = create_agent(
             model="openai:gpt-4o",
             tools=[...],
             middleware=[ChatSaver()],
-            context_schema=ContextSchema,
+            context_schema=StorageContext,
         )
         # Invoke with context (auth_token optional for SQLite)
         agent.invoke(
             {"messages": [...]},
-            context=ContextSchema(user_id="user-123", thread_id="thread-123")
+            context=StorageContext(user_id="user-123", thread_id="thread-123")
         )
+        ```
 
-        # Using SQLite with file storage
+        Using SQLite with file storage:
+
+        ```python
         agent = create_agent(
             model="openai:gpt-4o",
             tools=[...],
             middleware=[ChatSaver(db_path="./chat.db")],
-            context_schema=ContextSchema,
+            context_schema=StorageContext,
         )
+        ```
 
-        # Using Supabase (requires auth_token)
+        Using Supabase (requires auth_token):
+
+        ```python
         agent = create_agent(
             model="openai:gpt-4o",
             tools=[...],
@@ -217,50 +243,75 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
                 supabase_url="https://your-project.supabase.co",
                 supabase_key="your-anon-key",
             )],
-            context_schema=ContextSchema
+            context_schema=StorageContext
         )
         # Invoke with JWT token for Supabase
         agent.invoke(
             {"messages": [...]},
-            context=ContextSchema(user_id="user-123", thread_id="thread-123", auth_token="eyJ...")
+            context=StorageContext(
+                user_id="user-123",
+                thread_id="thread-123",
+                auth_token="eyJ..."
+            )
         )
+        ```
 
-        # Using Firebase (requires auth_token as ID token)
+        Using Firebase (requires auth_token as ID token):
+
+        ```python
         agent = create_agent(
             model="openai:gpt-4o",
             tools=[...],
-            middleware=[ChatSaver(backend="firebase", credentials_path="/path/to/firebase-creds.json")],
-            context_schema=ContextSchema,
+            middleware=[ChatSaver(
+                backend="firebase",
+                credentials_path="/path/to/firebase-creds.json"
+            )],
+            context_schema=StorageContext,
         )
         # Invoke with ID token for Firebase
         agent.invoke(
             {"messages": [...]},
-            context=ContextSchema(user_id="user-123", thread_id="thread-123", auth_token="firebase_id_token...")
+            context=StorageContext(
+                user_id="user-123",
+                thread_id="thread-123",
+                auth_token="firebase_id_token..."
+            )
         )
+        ```
     """
 
     def __init__(
         self,
         save_interval: int = 1,
         backend: str = "sqlite",
-        **backend_kwargs,
-    ):
-        """
-        Initialize chat history middleware.
+        **backend_kwargs: Any,
+    ) -> None:
+        """Initialize chat history middleware.
 
         Args:
-            save_interval: Save to database after every N model responses (default: 1)
-            backend: Storage backend to use ('sqlite', 'supabase', 'firebase'), default: 'sqlite'
+            save_interval: Save to database after every N model responses (default: 1).
+                Must be >= 1.
+            backend: Storage backend to use. Supported values: 'sqlite', 'supabase', 'firebase'.
+                Defaults to 'sqlite'.
             **backend_kwargs: Backend-specific initialization parameters:
                 - For SQLite: db_path (str, default: ":memory:" for in-memory database)
-                - For Supabase: supabase_url (str), supabase_key (str), or client (optional Supabase client instance)
+                - For Supabase: supabase_url (str), supabase_key (str), or client (optional)
                 - For Firebase: credentials_path (str, optional)
+
+        Raises:
+            ValueError: If save_interval < 1 or backend is not supported.
+            Exception: If storage backend initialization fails.
         """
         super().__init__()
+
+        if save_interval < 1:
+            msg = f"save_interval must be >= 1, got {save_interval}"
+            raise ValueError(msg)
+
         self.save_interval = save_interval
         self._model_call_count = 0
-        self._saved_msg_ids = set()  # Persistent tracking of saved message IDs
-        self._logged_messages = set()  # Track all log messages already displayed to avoid duplicates
+        self._saved_msg_ids: set[str] = set()  # Persistent tracking of saved message IDs
+        self._logged_messages: set[str] = set()  # Track logged messages to avoid duplicates
 
         # Set default db_path for SQLite if not provided
         if backend == "sqlite" and "db_path" not in backend_kwargs:
@@ -277,20 +328,19 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
     def after_agent(
         self,
         state: AgentState,
-        runtime: Runtime[ContextT],
-    ) -> Dict[str, Any] | None:
-        """
-        Save chat history after model responds.
+        runtime: Runtime[Any],
+    ) -> dict[str, Any] | None:
+        """Save chat history after agent execution completes.
 
-        This hook is called after each model response, allowing us to
+        This hook is called after each agent run completes, allowing us to
         persist the conversation state to the configured storage backend.
 
         Args:
-            state: Current agent state containing messages
-            runtime: Runtime context with user_id, thread_id, and auth_token
+            state: Current agent state containing messages.
+            runtime: Runtime context with user_id, thread_id, and auth_token.
 
         Returns:
-            Dict with collected logs or None
+            Dict with collected logs or None if no save occurred.
         """
         # Increment call count
         self._model_call_count += 1
@@ -299,19 +349,19 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         if self._model_call_count % self.save_interval != 0:
             return None
 
-        graph_logs = []
+        # Extract context information from runtime
         user_id = getattr(runtime.context, "user_id", None)
         thread_id = getattr(runtime.context, "thread_id", None)
         auth_token = getattr(runtime.context, "auth_token", None)
 
+        # Validate required context
         if not thread_id:
-            log_msg = (
-                "[after_agent] Missing thread_id in context; cannot save chat history."
-            )
+            log_msg = "[after_agent] Missing thread_id in context; cannot save chat history"
             if log_msg not in self._logged_messages:
-                graph_logs.append(logger.error(log_msg))
+                graph_logs = [logger.error(log_msg)]
                 self._logged_messages.add(log_msg)
-            return {"logs": graph_logs}
+                return {"logs": graph_logs}
+            return None
 
         # Get messages from state
         messages: list[AnyMessage] = state.get("messages", [])
@@ -320,21 +370,14 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
             if logger.isEnabledFor(logging.DEBUG):
                 log_msg = f"[after_agent] No messages to save for thread {thread_id}"
                 if log_msg not in self._logged_messages:
-                    graph_logs.append(logger.debug(log_msg))
                     self._logged_messages.add(log_msg)
-            return {"logs": graph_logs}
+                    return {"logs": [logger.debug(log_msg)]}
+            return None
 
         # Prepare credentials based on available context
-        credentials = {"user_id": user_id}
-        if auth_token:
-            # Add token with appropriate key based on backend type
-            backend_type = type(self.storage.backend).__name__.lower()
-            if "firebase" in backend_type:
-                credentials["id_token"] = auth_token
-            else:  # Supabase or other JWT-based backends
-                credentials["jwt_token"] = auth_token
+        credentials = self._prepare_credentials(user_id, auth_token)
 
-        # Use the ChatStorage instance to save chat history
+        # Save chat history using the storage backend
         result = self.storage.save_chat_history(
             thread_id=thread_id,
             credentials=credentials,
@@ -347,7 +390,51 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         if "saved_msg_ids" in result:
             self._saved_msg_ids.update(result["saved_msg_ids"])
 
-        # Log the result
+        # Log the result and collect graph logs
+        return self._log_save_result(result, thread_id)
+
+    def _prepare_credentials(
+        self,
+        user_id: str | None,
+        auth_token: str | None,
+    ) -> dict[str, Any]:
+        """Prepare credentials dict based on available context and backend type.
+
+        Args:
+            user_id: User identifier.
+            auth_token: Authentication token (JWT or ID token).
+
+        Returns:
+            Credentials dictionary with appropriate keys for the backend.
+        """
+        credentials: dict[str, Any] = {"user_id": user_id}
+
+        if auth_token:
+            # Add token with appropriate key based on backend type
+            backend_type = type(self.storage.backend).__name__.lower()
+            if "firebase" in backend_type:
+                credentials["id_token"] = auth_token
+            else:  # Supabase or other JWT-based backends
+                credentials["jwt_token"] = auth_token
+
+        return credentials
+
+    def _log_save_result(
+        self,
+        result: dict[str, Any],
+        thread_id: str,
+    ) -> dict[str, Any] | None:
+        """Log the save result and return graph logs.
+
+        Args:
+            result: Result dictionary from save_chat_history.
+            thread_id: Thread identifier for logging.
+
+        Returns:
+            Dict with logs key containing graph logs, or None if no logs.
+        """
+        graph_logs = []
+
         if result["success"]:
             if result["saved_count"] > 0:
                 log_msg = (
@@ -365,4 +452,4 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
                     graph_logs.append(logger.error(log_msg))
                     self._logged_messages.add(log_msg)
 
-        return {"logs": graph_logs}
+        return {"logs": graph_logs} if graph_logs else None
