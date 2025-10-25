@@ -3,7 +3,7 @@
 Middlewares for LangChain / LangGraph
 
 [![CI](https://github.com/alpha-xone/langmiddle/actions/workflows/ci.yml/badge.svg)](https://github.com/alpha-xone/langmiddle/actions/workflows/ci.yml)
-[![PyPI version](https://badge.fury.io/py/langmiddle.svg)](https://badge.fury.io/py/langmiddle)
+[![PyPI version](https://img.shields.io/pypi/v/langmiddle.svg)](https://pypi.org/project/langmiddle/)
 [![Python versions](https://img.shields.io/pypi/pyversions/langmiddle.svg)](https://pypi.org/project/langmiddle/)
 [![License](https://img.shields.io/github/license/alpha-xone/langmiddle.svg)](https://github.com/alpha-xone/langmiddle/blob/main/LICENSE)
 
