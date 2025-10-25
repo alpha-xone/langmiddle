@@ -13,14 +13,14 @@ from jose import JWTError, jwt
 from langchain_core.messages import AnyMessage
 
 from ..utils.logging import get_graph_logger
-from .base import ChatStorageBackend
+from .postgres_base import PostgreSQLBaseBackend
 
 logger = get_graph_logger(__name__)
 
 __all__ = ["SupabaseStorageBackend"]
 
 
-class SupabaseStorageBackend(ChatStorageBackend):
+class SupabaseStorageBackend(PostgreSQLBaseBackend):
     """Supabase implementation of chat storage backend."""
 
     def __init__(
@@ -116,119 +116,8 @@ class SupabaseStorageBackend(ChatStorageBackend):
                     "connection_string is required when auto_create_tables=True. "
                     "Get it from your Supabase project settings under Database > Connection string (Direct connection)."
                 )
-            self._create_tables_if_needed(connection_string)
-
-    def _create_tables_if_needed(self, connection_string: str) -> None:
-        """
-        Create Supabase tables from SQL files if they don't exist.
-
-        This method reads the SQL schema files and executes them to create the necessary tables.
-        It's designed to be idempotent - safe to run multiple times.
-
-        Args:
-            connection_string: PostgreSQL connection string for direct database access
-
-        Raises:
-            ImportError: If psycopg2 is not installed
-            Exception: If table creation fails
-        """
-        try:
-            import psycopg2
-        except ImportError:
-            raise ImportError(
-                "psycopg2 is required for automatic table creation. "
-                "Install with: pip install psycopg2-binary"
-            )
-
-        try:
-            # Get the path to SQL files
             sql_dir = Path(__file__).parent / "supabase"
-
-            if not sql_dir.exists():
-                logger.error(f"SQL directory not found: {sql_dir}")
-                raise FileNotFoundError(f"SQL schema files not found at {sql_dir}")
-
-            # Connect to database
-            conn = psycopg2.connect(connection_string)
-            conn.autocommit = True
-            cursor = conn.cursor()
-
-            # Check if tables already exist
-            cursor.execute(
-                """
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_schema = 'public'
-                    AND table_name = 'chat_threads'
-                );
-            """
-            )
-            result = cursor.fetchone()
-            threads_exists = result[0] if result else False
-
-            cursor.execute(
-                """
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_schema = 'public'
-                    AND table_name = 'chat_messages'
-                );
-            """
-            )
-            result = cursor.fetchone()
-            messages_exists = result[0] if result else False
-
-            if threads_exists and messages_exists:
-                logger.info("Supabase tables already exist, skipping creation")
-                cursor.close()
-                conn.close()
-                return
-
-            logger.info("Creating Supabase tables from SQL schema files...")
-
-            # Create trigger function first (required by chat_threads)
-            cursor.execute(
-                """
-                CREATE OR REPLACE FUNCTION update_updated_at_column()
-                RETURNS TRIGGER AS $$
-                BEGIN
-                    NEW.updated_at = timezone('utc'::text, now());
-                    RETURN NEW;
-                END;
-                $$ language 'plpgsql';
-            """
-            )
-            logger.debug("Created update_updated_at_column trigger function")
-
-            # Execute SQL files in order (threads first, then messages due to foreign key)
-            sql_files = ["chat_threads.sql", "chat_messages.sql"]
-
-            for sql_file in sql_files:
-                sql_path = sql_dir / sql_file
-                if not sql_path.exists():
-                    logger.warning(f"SQL file not found: {sql_path}, skipping")
-                    continue
-
-                with open(sql_path, "r", encoding="utf-8") as f:
-                    sql_content = f.read()
-
-                cursor.execute(sql_content)
-                logger.info(f"Successfully executed {sql_file}")
-
-            cursor.close()
-            conn.close()
-
-            logger.info("Successfully created all Supabase tables")
-
-        except Exception as e:
-            logger.error(f"Failed to create Supabase tables: {e}")
-            raise Exception(
-                f"Table creation failed: {e}\n\n"
-                "You can also create tables manually in the Supabase SQL Editor:\n"
-                f"1. Go to your Supabase project dashboard\n"
-                f"2. Navigate to SQL Editor\n"
-                f"3. Run the SQL files from: {Path(__file__).parent / 'supabase'}"
-            )
+            self._create_tables_with_psycopg2(connection_string, sql_dir)
 
     def authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
         """
@@ -283,6 +172,36 @@ class SupabaseStorageBackend(ChatStorageBackend):
         except Exception as e:
             logger.error(f"Unexpected error extracting user_id from JWT: {e}")
             return None
+
+    def _execute_query(
+        self,
+        query: str,
+        params: Optional[tuple] = None,
+        fetch_one: bool = False,
+        fetch_all: bool = False,
+    ) -> Optional[Any]:
+        """
+        Execute a SQL query using Supabase's query builder.
+
+        This wraps the parent class's SQL-based approach with Supabase's REST API.
+        Note: For save_messages and other operations, we override to use Supabase client directly.
+
+        Args:
+            query: SQL query string (converted to Supabase operations)
+            params: Query parameters tuple
+            fetch_one: Whether to fetch one result
+            fetch_all: Whether to fetch all results
+
+        Returns:
+            Query results if fetch_one or fetch_all, None otherwise
+        """
+        # For simple SELECT queries, we can use Supabase client
+        # This is a simplified implementation - for complex queries,
+        # you might want to use a direct PostgreSQL connection
+        raise NotImplementedError(
+            "Direct SQL execution not supported via Supabase client. "
+            "Use Supabase query builder methods instead."
+        )
 
     def get_existing_message_ids(self, thread_id: str) -> set:
         """

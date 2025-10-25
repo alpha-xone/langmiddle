@@ -1,7 +1,7 @@
 create table public.chat_messages (
   id text not null,
-  user_id uuid not null,
-  thread_id uuid not null,
+  user_id text not null,
+  thread_id text not null,
   content text not null,
   role text not null,
   metadata jsonb null default '{}'::jsonb,
@@ -9,7 +9,6 @@ create table public.chat_messages (
   usage_metadata jsonb null,
   constraint chat_messages_pkey primary key (id),
   constraint chat_messages_thread_id_fkey foreign KEY (thread_id) references chat_threads (id) on delete CASCADE,
-  constraint chat_messages_user_id_fkey foreign KEY (user_id) references auth.users (id) on delete CASCADE,
   constraint chat_messages_role_check check (
     (
       role = any (

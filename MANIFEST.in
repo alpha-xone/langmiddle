@@ -4,5 +4,6 @@ include requirements.txt
 include requirements-dev.txt
 recursive-include langmiddle *.py
 recursive-include langmiddle *.typed
+recursive-include langmiddle *.sql
 recursive-exclude * __pycache__
 recursive-exclude * *.py[co]

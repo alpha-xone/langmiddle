@@ -2,7 +2,7 @@
 Unified chat storage interface.
 
 This module provides a unified interface for chat storage across different backends
-including Supabase, SQLite, and Firebase.
+including Supabase, PostgreSQL, SQLite, and Firebase.
 """
 
 from typing import Any, Dict, List, Optional
@@ -12,6 +12,7 @@ from langchain_core.messages import AnyMessage
 from ..utils.logging import get_graph_logger
 from .base import ChatStorageBackend
 from .firebase_backend import FirebaseStorageBackend
+from .postgres_backend import PostgreSQLStorageBackend
 from .sqlite_backend import SQLiteStorageBackend
 from .supabase_backend import SupabaseStorageBackend
 
@@ -38,7 +39,7 @@ class ChatStorage:
         Factory method to create storage with specific backend.
 
         Args:
-            backend_type: Type of backend ('supabase', 'sqlite', 'firebase')
+            backend_type: Type of backend ('supabase', 'postgres', 'sqlite', 'firebase')
             **kwargs: Backend-specific initialization parameters
 
         Returns:
@@ -49,6 +50,8 @@ class ChatStorage:
         """
         backends = {
             "supabase": SupabaseStorageBackend,
+            "postgres": PostgreSQLStorageBackend,
+            "postgresql": PostgreSQLStorageBackend,
             "sqlite": SQLiteStorageBackend,
             "firebase": FirebaseStorageBackend,
         }

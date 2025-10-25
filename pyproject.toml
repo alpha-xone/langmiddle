@@ -42,6 +42,10 @@ dev = [
     "build>=0.8",
     "twine>=4.0",
 ]
+postgres = [
+    "psycopg2-binary>=2.9.0",
+    "python-dotenv>=1.0.0",
+]
 supabase = [
     "supabase>=2.20.0",
     "python-jose>=3.3.0",
@@ -73,7 +77,7 @@ include = ["langmiddle*"]
 version = {attr = "langmiddle.__version__"}
 
 [tool.setuptools.package-data]
-langmiddle = ["py.typed", "storage/supabase/*.sql"]
+langmiddle = ["py.typed", "storage/supabase/*.sql", "storage/postgres/*.sql"]
 
 [tool.black]
 line-length = 88
