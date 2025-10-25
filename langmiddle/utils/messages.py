@@ -9,21 +9,28 @@ from __future__ import annotations
 from langchain_core.messages import AnyMessage
 
 
-def is_tool_message(msg: AnyMessage) -> bool:
+def is_tool_message(msg: AnyMessage | dict) -> bool:
     """Check if a message is a tool message.
 
     A message is considered a tool message if:
     1. It has type 'tool', OR
     2. It's an AI message that calls tools (finish_reason == 'tool_calls')
 
+    This function supports both LangChain message objects and dictionary representations
+    of messages, making it flexible for use across different contexts.
+
     Args:
-        msg: Message to check.
+        msg: Message to check. Can be either:
+            - A LangChain message object (AnyMessage)
+            - A dictionary with 'type' and optional 'response_metadata' keys
 
     Returns:
         True if message is tool-related, False otherwise.
 
     Examples:
-        >>> from langchain_core.messages import ToolMessage, AIMessage
+        With LangChain message objects:
+
+        >>> from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
         >>> tool_msg = ToolMessage(content="result", tool_call_id="123")
         >>> is_tool_message(tool_msg)
         True
@@ -38,14 +45,38 @@ def is_tool_message(msg: AnyMessage) -> bool:
         >>> human_msg = HumanMessage(content="Hello")
         >>> is_tool_message(human_msg)
         False
+
+        With dictionary representations:
+
+        >>> tool_dict = {"type": "tool", "content": "result"}
+        >>> is_tool_message(tool_dict)
+        True
+
+        >>> ai_dict = {
+        ...     "type": "ai",
+        ...     "response_metadata": {"finish_reason": "tool_calls"}
+        ... }
+        >>> is_tool_message(ai_dict)
+        True
+
+        >>> human_dict = {"type": "human", "content": "Hello"}
+        >>> is_tool_message(human_dict)
+        False
     """
+    if isinstance(msg, dict):
+        msg_type = msg.get("type")
+        response = msg.get("response_metadata", {})
+    else:
+        msg_type = getattr(msg, "type", None)
+        response = getattr(msg, "response_metadata", {})
+
     # Check if it's a tool message type
-    if msg.type == "tool":
+    if msg_type == "tool":
         return True
 
     # Check if it's an AI message that triggers tool calls
-    if msg.type == "ai":
-        finish_reason = getattr(msg, "response_metadata", {}).get("finish_reason", "")
+    if msg_type == "ai":
+        finish_reason = response.get("finish_reason", "")
         return finish_reason == "tool_calls"
 
     return False

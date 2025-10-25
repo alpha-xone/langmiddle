@@ -1,6 +1,6 @@
 """Utility functions for langmiddle middleware."""
 
-from .logging import get_graph_logger, LoggerWithCapture
+from .logging import LoggerWithCapture, get_graph_logger
 from .messages import filter_tool_messages, is_tool_message
 
 __all__ = [
