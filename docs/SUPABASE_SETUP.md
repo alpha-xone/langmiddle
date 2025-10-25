@@ -59,7 +59,7 @@ print("✓ Tables created successfully!")
 After tables are created, you don't need the connection string anymore:
 
 ```python
-from langmiddle import ChatSaver
+from langmiddle.history import ChatSaver
 
 # Simple - loads from .env
 middleware = ChatSaver(backend="supabase")
@@ -172,7 +172,7 @@ print("✓ Supabase setup complete!")
 
 **main.py** (your app):
 ```python
-from langmiddle import ChatSaver
+from langmiddle.history import ChatSaver
 
 # Normal usage - no setup code needed
 middleware = ChatSaver(backend="supabase")

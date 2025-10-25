@@ -4,6 +4,7 @@ This example demonstrates how to use the MemoryExtractor middleware to
 automatically extract and store memories from conversations.
 """
 
+from langchain.agents.middleware import AgentState
 from langchain_openai import ChatOpenAI
 from langgraph.store.memory import InMemoryStore
 
@@ -13,7 +14,7 @@ from langmiddle.memory import MemoryExtractor
 # Example 1: Basic usage with InMemoryStore
 def basic_memory_extraction():
     """Basic example of memory extraction."""
-    # Initialize the memory extractor
+    # Initialize the memory extractor - always extracts
     extractor = MemoryExtractor(
         model=ChatOpenAI(model="gpt-4"),
         namespace_prefix=["user", "123"],
@@ -23,16 +24,16 @@ def basic_memory_extraction():
     store = InMemoryStore()
 
     # Simulate conversation state
-    from langchain_core.messages import HumanMessage, AIMessage
+    from langchain_core.messages import AIMessage, HumanMessage
 
-    state = {
+    state = AgentState({
         "messages": [
             HumanMessage(content="Hi, my name is Alice and I love Python programming."),
             AIMessage(content="Nice to meet you Alice! Python is a great language."),
             HumanMessage(content="I'm working on a machine learning project."),
             AIMessage(content="That sounds interesting! What kind of ML project?"),
         ]
-    }
+    })
 
     # Extract memories (in real usage, this is called automatically by middleware)
     from langgraph.runtime import Runtime
@@ -60,7 +61,23 @@ def basic_memory_extraction():
                 print(f"  • {memory['key']}: {item.value}")
 
 
-# Example 2: Custom namespace and prompt
+# Example 2: Token-based extraction triggering
+def token_based_extraction():
+    """Example with token-based extraction control."""
+    # Only extract when conversation reaches 4000 tokens
+    extractor = MemoryExtractor(
+        model=ChatOpenAI(model="gpt-4"),
+        namespace_prefix=["user", "456"],
+        max_tokens_before_extraction=4000,
+        messages_to_extract_from=15,
+    )
+
+    print(f"✅ Token-based extractor configured: {extractor}")
+    print("   Will extract when messages exceed 4000 tokens")
+    print("   Will analyze last 15 messages")
+
+
+# Example 3: Custom namespace and prompt
 def custom_memory_extraction():
     """Example with custom configuration."""
     from langchain_core.prompts import ChatPromptTemplate
@@ -91,7 +108,7 @@ Format each memory with a clear key and structured value.""",
     print(f"✅ Custom memory extractor configured: {extractor}")
 
 
-# Example 3: Using with PostgresStore
+# Example 4: Using with PostgresStore
 def postgres_memory_extraction():
     """Example with PostgresStore for persistent storage."""
     from langgraph.store.postgres import AsyncPostgresStore
@@ -110,14 +127,14 @@ def postgres_memory_extraction():
             )
 
             # Simulate conversation
-            from langchain_core.messages import HumanMessage, AIMessage
+            from langchain_core.messages import AIMessage, HumanMessage
 
-            state = {
+            state = AgentState({
                 "messages": [
                     HumanMessage(content="I prefer dark mode and Python 3.11+"),
                     AIMessage(content="Got it! I'll remember your preferences."),
                 ]
-            }
+            })
 
             # Extract memories
             from langgraph.runtime import Runtime
@@ -143,26 +160,20 @@ def postgres_memory_extraction():
     asyncio.run(extract_and_store())
 
 
-# Example 4: Integration with LangGraph workflow
+# Example 5: Integration with LangGraph workflow
 def langgraph_workflow_integration():
     """Example of using MemoryExtractor in a LangGraph workflow."""
-    from langgraph.graph import StateGraph, START, END
     from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.graph import END, START, StateGraph
 
     # Define state
-    from typing import Annotated
-    from operator import add
-
-    class State(dict):
-        messages: Annotated[list, add]
-
     # Create graph
-    workflow = StateGraph(State)
+    workflow = StateGraph(AgentState)
 
     # Add node
     def chatbot(state):
         model = ChatOpenAI(model="gpt-4")
-        response = model.invoke(state["messages"])
+        response = model.invoke(state.messages)
         return {"messages": [response]}
 
     workflow.add_node("chatbot", chatbot)
@@ -194,15 +205,19 @@ if __name__ == "__main__":
     print("-" * 60)
     basic_memory_extraction()
 
-    print("\n2️⃣  Custom Configuration")
+    print("\n2️⃣  Token-Based Extraction")
+    print("-" * 60)
+    token_based_extraction()
+
+    print("\n3️⃣  Custom Configuration")
     print("-" * 60)
     custom_memory_extraction()
 
-    print("\n3️⃣  PostgreSQL Storage (uncomment to run)")
+    print("\n4️⃣  PostgreSQL Storage (uncomment to run)")
     print("-" * 60)
     # postgres_memory_extraction()  # Uncomment if you have PostgreSQL setup
 
-    print("\n4️⃣  LangGraph Workflow Integration")
+    print("\n5️⃣  LangGraph Workflow Integration")
     print("-" * 60)
     langgraph_workflow_integration()
 

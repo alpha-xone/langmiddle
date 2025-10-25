@@ -109,7 +109,7 @@ print("   (Example of how ChatSaver uses the storage system)")
 print(
     """
 # In your LangGraph application:
-from langmiddle import ChatSaver
+from langmiddle.history import ChatSaver
 
 # Create middleware with backend selection
 history_middleware = ChatSaver(

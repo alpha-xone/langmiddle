@@ -54,7 +54,7 @@ CREATE DATABASE chatdb;
 The backend can automatically create the required tables:
 
 ```python
-from langmiddle import ChatStorage
+from langmiddle.storage import ChatStorage
 
 storage = ChatStorage.create(
     "postgres",
@@ -104,7 +104,7 @@ POSTGRES_CONNECTION_STRING=postgresql://user:password@localhost:5432/chatdb
 Then use the backend without explicitly passing the connection string:
 
 ```python
-from langmiddle import ChatStorage
+from langmiddle.storage import ChatStorage
 
 # Automatically loads from .env
 storage = ChatStorage.create("postgres")
@@ -115,7 +115,7 @@ storage = ChatStorage.create("postgres")
 ### Basic Usage
 
 ```python
-from langmiddle import ChatStorage
+from langmiddle.storage import ChatStorage
 from langchain_core.messages import HumanMessage, AIMessage
 
 # Create storage
@@ -167,7 +167,7 @@ print(f"Skipped {result2['skipped_count']} duplicate messages")
 
 ```python
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langmiddle import ChatStorage
+from langmiddle.storage import ChatStorage
 
 # Initialize storage
 storage = ChatStorage.create("postgres")

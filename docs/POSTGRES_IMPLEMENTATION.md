@@ -88,7 +88,7 @@ pip install langmiddle[supabase]
 
 ### PostgreSQL
 ```python
-from langmiddle import ChatStorage
+from langmiddle.storage import ChatStorage
 
 storage = ChatStorage.create(
     "postgres",

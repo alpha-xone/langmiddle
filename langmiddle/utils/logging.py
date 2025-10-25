@@ -12,13 +12,15 @@ from dotenv import load_dotenv
 load_dotenv()
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 
+__all__ = ["get_graph_logger", "LoggerWithCapture"]
+
 
 class JSONFormatter(logging.Formatter):
     """JSON formatter for structured logging in production."""
 
     def format(self, record):
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now().isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

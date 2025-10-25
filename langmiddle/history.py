@@ -16,6 +16,7 @@ from langchain_core.messages import AnyMessage
 
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
+from .utils.messages import is_tool_message
 
 if TYPE_CHECKING:
     from langgraph.runtime import Runtime
@@ -131,21 +132,11 @@ class ToolFilter(AgentMiddleware[AgentState, Any]):
         # Collect IDs of messages to remove
         messages_to_remove = []
         for msg in messages:
-            # Mark tool messages for removal
-            if msg.type == "tool":
-                logger.debug(f"[{stage}] Filtering out tool message: {msg.id}")
+            # Check if message is tool-related using utility function
+            if is_tool_message(msg):
+                msg_type = "tool" if msg.type == "tool" else "AI with tool_calls"
+                logger.debug(f"[{stage}] Filtering out {msg_type} message: {msg.id}")
                 messages_to_remove.append(RemoveMessage(id=str(msg.id)))
-
-            # Mark AI messages that trigger tool calls for removal
-            elif msg.type == "ai":
-                finish_reason = getattr(msg, "response_metadata", {}).get(
-                    "finish_reason", ""
-                )
-                if finish_reason == "tool_calls":
-                    logger.debug(
-                        f"[{stage}] Filtering out AI message with tool_calls: {msg.id}"
-                    )
-                    messages_to_remove.append(RemoveMessage(id=str(msg.id)))
 
         # Only return update if we have messages to remove
         if messages_to_remove:

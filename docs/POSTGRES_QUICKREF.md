@@ -18,7 +18,7 @@ pip install langmiddle[postgres]
 
 ### Basic Usage
 ```python
-from langmiddle import ChatStorage
+from langmiddle.storage import ChatStorage
 
 # Option 1: Direct connection string
 storage = ChatStorage.create(

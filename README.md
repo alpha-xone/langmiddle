@@ -42,7 +42,7 @@ pip install langmiddle[all]
 ## Quick Start - LangChain Middleware
 
 ```python
-from langmiddle import ChatSaver, ToolFilter, StorageContext
+from langmiddle.history import ChatSaver, ToolFilter, StorageContext
 
 # Initialize middleware with desired backend
 agent = create_agent(

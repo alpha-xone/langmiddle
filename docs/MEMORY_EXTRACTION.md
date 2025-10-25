@@ -30,7 +30,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.store.memory import InMemoryStore
 from langmiddle.memory import MemoryExtractor
 
-# Initialize the extractor
+# Initialize the extractor - always extracts after each agent run
 extractor = MemoryExtractor(
     model=ChatOpenAI(model="gpt-4"),
     namespace_prefix=["user", "123"]
@@ -38,6 +38,18 @@ extractor = MemoryExtractor(
 
 # Use in your LangGraph workflow
 # The middleware will automatically extract memories after each agent run
+```
+
+### Token-Based Triggering
+
+```python
+# Only extract memories when conversation reaches 4000 tokens
+extractor = MemoryExtractor(
+    model=ChatOpenAI(model="gpt-4"),
+    namespace_prefix=["user", "123"],
+    max_tokens_before_extraction=4000,  # Threshold for extraction
+    messages_to_extract_from=20          # Analyze last 20 messages
+)
 ```
 
 ### Custom Prompt
@@ -134,8 +146,50 @@ async with AsyncPostgresStore.from_conn_string(conn_string) as store:
 ### Model
 
 The `model` parameter accepts either:
-- A model name string: `"gpt-4"`, `"gpt-3.5-turbo"`
+- A model name string: `"gpt-4"`, `"gpt-3.5-turbo"`, `"anthropic:claude-3-opus"`
 - A `BaseChatModel` instance: `ChatOpenAI(model="gpt-4")`
+
+When passing a string, the middleware uses `init_chat_model()` to initialize the model.
+
+### Token-Based Extraction Control
+
+Similar to `SummarizationMiddleware`, you can control when extraction is triggered:
+
+```python
+# Extract only when conversation reaches threshold
+extractor = MemoryExtractor(
+    model="gpt-4",
+    max_tokens_before_extraction=4000,  # Token threshold
+    messages_to_extract_from=20          # Number of recent messages to analyze
+)
+
+# Always extract (default behavior when max_tokens_before_extraction is None)
+extractor = MemoryExtractor(
+    model="gpt-4",
+    max_tokens_before_extraction=None  # Extract after every agent run
+)
+```
+
+**Parameters:**
+- `max_tokens_before_extraction`: Token threshold to trigger extraction. If `None`, extraction runs on every agent completion.
+- `messages_to_extract_from`: Number of recent messages to analyze for extraction (default: 20).
+- `token_counter`: Function to count tokens in messages (default: `count_tokens_approximately`).
+
+### Custom Token Counter
+
+```python
+from langchain_core.messages.utils import count_tokens_approximately
+
+def custom_token_counter(messages):
+    # Your custom token counting logic
+    return sum(len(str(m.content)) // 4 for m in messages)
+
+extractor = MemoryExtractor(
+    model="gpt-4",
+    token_counter=custom_token_counter,
+    max_tokens_before_extraction=5000
+)
+```
 
 ### Namespace Prefix
 

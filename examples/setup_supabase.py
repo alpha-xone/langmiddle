@@ -74,7 +74,7 @@ try:
     print("\n📝 Next steps:")
     print("   1. (Optional) Remove SUPABASE_CONNECTION_STRING from .env")
     print("   2. Use the middleware in your code:")
-    print("\n   from langmiddle import ChatSaver")
+    print("\n   from langmiddle.history import ChatSaver")
     print("   middleware = ChatSaver(backend='supabase')")
     print("\n   That's it! The middleware will use SUPABASE_URL and SUPABASE_ANON_KEY")
 
