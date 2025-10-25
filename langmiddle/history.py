@@ -13,10 +13,11 @@ from typing import TYPE_CHECKING, Any
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.messages import RemoveMessage
 from langchain_core.messages import AnyMessage
+from langgraph.graph.message import REMOVE_ALL_MESSAGES
 
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
-from .utils.messages import is_tool_message
+from .utils.messages import filter_tool_messages
 
 if TYPE_CHECKING:
     from langgraph.runtime import Runtime
@@ -125,25 +126,18 @@ class ToolFilter(AgentMiddleware[AgentState, Any]):
             Updated state dict with RemoveMessage instances or None if no filtering occurred
         """
         messages: list[AnyMessage] = state.get("messages", [])
-
-        if not messages:
-            return None
-
-        # Collect IDs of messages to remove
-        messages_to_remove = []
-        for msg in messages:
-            # Check if message is tool-related using utility function
-            if is_tool_message(msg):
-                msg_type = "tool" if msg.type == "tool" else "AI with tool_calls"
-                logger.debug(f"[{stage}] Filtering out {msg_type} message: {msg.id}")
-                messages_to_remove.append(RemoveMessage(id=str(msg.id)))
+        new_messages: list[AnyMessage] = filter_tool_messages(messages)
 
         # Only return update if we have messages to remove
-        if messages_to_remove:
-            logger.debug(
-                f"[{stage}] Marked {len(messages_to_remove)} tool-related messages for removal"
-            )
-            return {"messages": messages_to_remove}
+        cnt_diff = len(messages) - len(new_messages)
+        if cnt_diff > 0:
+            logger.debug(f"[{stage}] Marked {cnt_diff} tool-related messages for removal")
+            return {
+                "messages": [
+                    RemoveMessage(id=REMOVE_ALL_MESSAGES),
+                    *new_messages,
+                ]
+            }
 
         return None
 

@@ -13,13 +13,11 @@ from typing import TYPE_CHECKING, Any
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.chat_models import BaseChatModel, init_chat_model
 from langchain_core.messages import (
-    AIMessage,
     AnyMessage,
-    HumanMessage,
     MessageLikeRepresentation,
+    SystemMessage,
 )
 from langchain_core.messages.utils import count_tokens_approximately
-from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
 from langmiddle.utils.logging import get_graph_logger
@@ -111,35 +109,31 @@ class MemoryExtractor(AgentMiddleware[AgentState, Any]):
         ...     messages_to_extract_from=20
         ... )
 
-        Custom prompt template:
+        Custom extraction prompt:
 
-        >>> custom_prompt = ChatPromptTemplate.from_messages([
-        ...     ("system", "Extract key facts about the user from this conversation."),
-        ...     ("user", "{messages}")
-        ... ])
+        >>> custom_prompt = '''Extract user preferences and facts.
+        ... Focus on: skills, interests, and goals.'''
         >>> extractor = MemoryExtractor(
         ...     model="gpt-4",
         ...     namespace_prefix=["user"],
-        ...     prompt_template=custom_prompt
+        ...     extraction_prompt=custom_prompt
         ... )
 
     Attributes:
         model: The LLM model for extraction (model name string or BaseChatModel instance).
         max_tokens_before_extraction: Token threshold to trigger extraction. If None, extraction runs on every agent completion.
-        messages_to_extract_from: Number of recent messages to analyze for extraction.
         token_counter: Function to count tokens in messages.
         namespace_prefix: Default namespace path prefix for extracted memories.
-        prompt_template: Optional custom prompt for memory extraction.
+        extraction_prompt: String prompt for memory extraction (used as SystemMessage).
     """
 
     def __init__(
         self,
         model: str | BaseChatModel,
         max_tokens_before_extraction: int | None = None,
-        messages_to_extract_from: int = 20,
         token_counter: TokenCounter = count_tokens_approximately,
         namespace_prefix: list[str] | None = None,
-        prompt_template: ChatPromptTemplate | None = None,
+        extraction_prompt: str = DEFAULT_EXTRACTOR_PROMPT,
     ) -> None:
         """Initialize the memory extractor.
 
@@ -147,10 +141,9 @@ class MemoryExtractor(AgentMiddleware[AgentState, Any]):
             model: LLM model for extraction (name or instance).
             max_tokens_before_extraction: Token threshold to trigger extraction.
                 If None, extraction runs on every agent completion.
-            messages_to_extract_from: Number of recent messages to analyze.
             token_counter: Function to count tokens in messages.
             namespace_prefix: Default namespace prefix for memories.
-            prompt_template: Optional custom prompt template.
+            extraction_prompt: Custom prompt string for memory extraction.
         """
         super().__init__()
 
@@ -159,58 +152,12 @@ class MemoryExtractor(AgentMiddleware[AgentState, Any]):
 
         self.model = model
         self.max_tokens_before_extraction = max_tokens_before_extraction
-        self.messages_to_extract_from = messages_to_extract_from
         self.token_counter = token_counter
         self.namespace_prefix = namespace_prefix or ["memories"]
-        self.prompt_template = prompt_template or self._create_default_prompt()
+        self.extraction_prompt = extraction_prompt
 
         # Create structured output model - store as Any to avoid type issues
-        self._structured_model: Any = self.model.with_structured_output(MemoriesExtraction)
-
-    def _create_default_prompt(self) -> ChatPromptTemplate:
-        """Create the default prompt template for memory extraction.
-
-        Returns:
-            A chat prompt template with system and user messages.
-        """
-        return ChatPromptTemplate.from_messages(
-            [
-                ("system", DEFAULT_EXTRACTOR_PROMPT),
-                ("user", "Extract memories from this conversation:\n\n{messages}"),
-            ]
-        )
-
-    def _get_recent_messages(self, messages: list[AnyMessage]) -> list[AnyMessage]:
-        """Get the most recent messages to analyze for extraction.
-
-        Args:
-            messages: Full list of conversation messages.
-
-        Returns:
-            List of recent messages up to messages_to_extract_from limit.
-        """
-        if len(messages) <= self.messages_to_extract_from:
-            return messages
-        return messages[-self.messages_to_extract_from:]
-
-    def _format_messages_for_prompt(self, messages: list[AnyMessage]) -> str:
-        """Format messages into a readable string for the prompt.
-
-        Args:
-            messages: List of messages to format.
-
-        Returns:
-            Formatted string representation of messages.
-        """
-        formatted = []
-        for msg in messages:
-            if isinstance(msg, HumanMessage):
-                formatted.append(f"Human: {msg.content}")
-            elif isinstance(msg, AIMessage):
-                formatted.append(f"AI: {msg.content}")
-            else:
-                formatted.append(f"{msg.__class__.__name__}: {msg.content}")
-        return "\n".join(formatted)
+        self._llm: Any = self.model.with_structured_output(MemoriesExtraction)
 
     def _should_extract(self, messages: list[AnyMessage]) -> bool:
         """Determine if extraction should be triggered based on token count.
@@ -231,6 +178,10 @@ class MemoryExtractor(AgentMiddleware[AgentState, Any]):
     def _extract_memories(self, messages: list[AnyMessage]) -> MemoriesExtraction:
         """Extract memories from messages using the LLM.
 
+        Filters out tool messages, then invokes the LLM with the extraction prompt
+        as a SystemMessage followed by the conversation messages. The LLM returns
+        structured output in MemoriesExtraction format.
+
         Args:
             messages: List of conversation messages.
 
@@ -245,14 +196,10 @@ class MemoryExtractor(AgentMiddleware[AgentState, Any]):
                 logger.debug("No non-tool messages found, skipping extraction")
                 return MemoriesExtraction(memories=[])
 
-            # Format messages for prompt
-            formatted_messages = self._format_messages_for_prompt(filtered_messages)
-
-            # Create prompt
-            prompt = self.prompt_template.format_messages(messages=formatted_messages)
-
             # Invoke model - result should be MemoriesExtraction
-            result: Any = self._structured_model.invoke(prompt)
+            result: Any = self._llm.invoke(
+                [SystemMessage(content=self.extraction_prompt)] + filtered_messages
+            )
 
             # Type guard: ensure result is MemoriesExtraction
             if not isinstance(result, MemoriesExtraction):
@@ -301,11 +248,8 @@ class MemoryExtractor(AgentMiddleware[AgentState, Any]):
                 )
                 return None
 
-            # Get recent messages to analyze
-            recent_messages = self._get_recent_messages(messages)
-
             # Extract memories
-            extraction = self._extract_memories(recent_messages)
+            extraction = self._extract_memories(messages)
 
             if not extraction.memories:
                 logger.debug("No memories extracted")
