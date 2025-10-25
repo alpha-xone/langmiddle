@@ -5,8 +5,9 @@ This example demonstrates how to use the PostgreSQL storage backend
 with langmiddle.
 """
 
-from langmiddle import ChatStorage
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
+
+from langmiddle.storage import ChatStorage
 
 
 def basic_usage():
