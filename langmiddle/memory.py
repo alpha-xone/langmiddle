@@ -8,7 +8,7 @@ identify key information that should be stored for long-term memory.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.chat_models import BaseChatModel, init_chat_model
@@ -18,13 +18,11 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from langchain_core.messages.utils import count_tokens_approximately
+from langgraph.runtime import Runtime
 from pydantic import BaseModel, Field
 
 from langmiddle.utils.logging import get_graph_logger
 from langmiddle.utils.messages import filter_tool_messages
-
-if TYPE_CHECKING:
-    from langgraph.runtime import Runtime
 
 TokenCounter = Callable[[Iterable[MessageLikeRepresentation]], int]
 
@@ -32,7 +30,8 @@ logger = get_graph_logger(__name__)
 # Disable propagation to avoid duplicate logs
 logger._logger.propagate = False
 
-DEFAULT_EXTRACTOR_PROMPT = """You are an expert at extracting key insights and memories from conversations.
+DEFAULT_EXTRACTOR_PROMPT = """
+You are an expert at extracting key insights and memories from conversations.
 Analyze the conversation and extract important information that should be remembered.
 
 Focus on:
@@ -78,7 +77,7 @@ class MemoriesExtraction(BaseModel):
     )
 
 
-class MemoryExtractor(AgentMiddleware[AgentState, Any]):
+class MemoryExtractor(AgentMiddleware[AgentState, Runtime]):
     """Extract memories/insights from messages after agent runs.
 
     This middleware processes conversation messages using an LLM to identify and
@@ -237,7 +236,6 @@ class MemoryExtractor(AgentMiddleware[AgentState, Any]):
             messages: list[AnyMessage] = state.get("messages", [])
 
             if not messages:
-                logger.debug("No messages in state, skipping memory extraction")
                 return None
 
             # Check if extraction should be triggered based on token count

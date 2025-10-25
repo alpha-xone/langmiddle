@@ -42,7 +42,7 @@ pip install langmiddle[all]
 ## Quick Start - LangChain Middleware
 
 ```python
-from langmiddle.history import ChatSaver, ToolFilter, StorageContext
+from langmiddle.history import ChatSaver, ToolMessagePruner, StorageContext
 
 # Initialize middleware with desired backend
 agent = create_agent(
@@ -50,7 +50,7 @@ agent = create_agent(
     tools=[],
     context_schema=StorageContext,
     middleware=[
-        ToolFilter(),
+        ToolMessagePruner(),
         ChatSaver(backend="sqlite", db_path="./chat_history.db")
     ],
 )

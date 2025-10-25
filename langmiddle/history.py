@@ -8,25 +8,23 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.messages import RemoveMessage
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
+from langgraph.runtime import Runtime
 
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
 from .utils.messages import filter_tool_messages
 
-if TYPE_CHECKING:
-    from langgraph.runtime import Runtime
-
 logger = get_graph_logger(__name__)
 # Disable propagation to avoid duplicate logs (LangGraph handles the logging)
 logger._logger.propagate = False
 
-__all__ = ["StorageContext", "ToolFilter", "ChatSaver"]
+__all__ = ["StorageContext", "ToolMessagePruner", "ChatSaver"]
 
 
 @dataclass
@@ -76,9 +74,9 @@ class StorageContext:
     auth_token: str | None = None
 
 
-class ToolFilter(AgentMiddleware[AgentState, Any]):
+class ToolMessagePruner(AgentMiddleware[AgentState, Runtime]):
     """
-    Middleware to filter out tool messages from chat history.
+    Middleware to prune tool messages from chat history.
 
     This middleware removes tool-related messages that shouldn't be saved:
     1. Messages with type 'tool'
@@ -89,8 +87,8 @@ class ToolFilter(AgentMiddleware[AgentState, Any]):
             model="openai:gpt-4o",
             tools=[...],
             middleware=[
-                ToolFilter(),   # Filter before and after agent (default)
-                ChatSaver()     # Then save
+                ToolMessagePruner(),   # Prune before and after agent (default)
+                ChatSaver()            # Then save
             ],
             context_schema=ContextSchema,
         )
@@ -98,7 +96,7 @@ class ToolFilter(AgentMiddleware[AgentState, Any]):
 
     def __init__(self, when: str = "both"):
         """
-        Initialize the tool filter middleware.
+        Initialize the tool message pruner middleware.
 
         Args:
             when: When to filter messages - 'before', 'after', or 'both' (default: 'both')
@@ -182,7 +180,7 @@ class ToolFilter(AgentMiddleware[AgentState, Any]):
         return self._filter_tool_messages(state, "after_agent")
 
 
-class ChatSaver(AgentMiddleware[AgentState, Any]):
+class ChatSaver(AgentMiddleware[AgentState, Runtime]):
     """Middleware to save chat history to various storage backends after each model response.
 
     This middleware automatically captures and persists conversation history
