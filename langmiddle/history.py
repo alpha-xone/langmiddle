@@ -74,7 +74,7 @@ class StorageContext:
     auth_token: str | None = None
 
 
-class ToolMessagePruner(AgentMiddleware[AgentState, Runtime]):
+class ToolMessagePruner(AgentMiddleware):
     """
     Middleware to prune tool messages from chat history.
 
@@ -180,7 +180,7 @@ class ToolMessagePruner(AgentMiddleware[AgentState, Runtime]):
         return self._filter_tool_messages(state, "after_agent")
 
 
-class ChatSaver(AgentMiddleware[AgentState, Runtime]):
+class ChatSaver(AgentMiddleware):
     """Middleware to save chat history to various storage backends after each model response.
 
     This middleware automatically captures and persists conversation history
