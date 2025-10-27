@@ -17,6 +17,13 @@ Production-ready middleware for **LangChain** and **LangGraph v1** with multi-ba
 - 🔄 **Multi-Backend Storage**: Switch between SQLite, PostgreSQL, Supabase, Firebase with one parameter
 - 🔒 **Production Ready**: JWT authentication, RLS support, type-safe
 
+## Available middleware
+
+| Middleware | Description |
+|---|---|
+| ToolMessageRemover | Removes tool-related messages from the conversation state (pre/post agent). |
+| ChatSaver | Persists chat history to configurable backends (SQLite, Postgres, Supabase, Firebase). |
+
 ## Installation
 
 **Core Package** (SQLite only):
@@ -42,7 +49,7 @@ pip install langmiddle[all]
 ## Quick Start - LangChain Middleware
 
 ```python
-from langmiddle.history import ChatSaver, ToolMessagePruner, StorageContext
+from langmiddle.history import ChatSaver, ToolMessageRemover, StorageContext
 
 # Initialize middleware with desired backend
 agent = create_agent(
@@ -50,7 +57,7 @@ agent = create_agent(
     tools=[],
     context_schema=StorageContext,
     middleware=[
-        ToolMessagePruner(),
+        ToolMessageRemover(),
         ChatSaver(backend="sqlite", db_path="./chat_history.db")
     ],
 )

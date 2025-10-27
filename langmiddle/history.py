@@ -24,7 +24,7 @@ logger = get_graph_logger(__name__)
 # Disable propagation to avoid duplicate logs (LangGraph handles the logging)
 logger._logger.propagate = False
 
-__all__ = ["StorageContext", "ToolMessagePruner", "ChatSaver"]
+__all__ = ["StorageContext", "ToolMessageRemover", "ChatSaver"]
 
 
 @dataclass
@@ -74,9 +74,9 @@ class StorageContext:
     auth_token: str | None = None
 
 
-class ToolMessagePruner(AgentMiddleware[AgentState, Runtime]):
+class ToolMessageRemover(AgentMiddleware[AgentState, Runtime]):
     """
-    Middleware to prune tool messages from chat history.
+    Middleware to remove tool messages from chat history.
 
     This middleware removes tool-related messages that shouldn't be saved:
     1. Messages with type 'tool'
@@ -87,8 +87,8 @@ class ToolMessagePruner(AgentMiddleware[AgentState, Runtime]):
             model="openai:gpt-4o",
             tools=[...],
             middleware=[
-                ToolMessagePruner(),   # Prune before and after agent (default)
-                ChatSaver()            # Then save
+                ToolMessageRemover(),   # Remove before and after agent (default)
+                ChatSaver()             # Then save
             ],
             context_schema=ContextSchema,
         )
@@ -96,7 +96,7 @@ class ToolMessagePruner(AgentMiddleware[AgentState, Runtime]):
 
     def __init__(self, when: str = "both"):
         """
-        Initialize the tool message pruner middleware.
+        Initialize the tool message remover middleware.
 
         Args:
             when: When to filter messages - 'before', 'after', or 'both' (default: 'both')
