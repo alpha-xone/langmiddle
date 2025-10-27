@@ -301,12 +301,13 @@ class ChatSaver(AgentMiddleware[AgentState, Runtime]):
             backend_kwargs["db_path"] = ":memory:"
 
         # Initialize storage backend
+        name = self.__class__.__name__
         try:
             self.storage = ChatStorage.create(backend, **backend_kwargs)
-            logger.info(f"Initialized ChatSaver with {backend} backend")
+            logger.info(f"Initialized middleware {name} with {backend} backend")
         except Exception as e:
             logger.error(f"Failed to initialize storage backend '{backend}': {e}")
-            raise
+            logger.error(f"Initiation failed - the middleware {name} will be skipped during execution.")
 
     def after_agent(
         self,

@@ -16,11 +16,15 @@ across multiple conversation sessions.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from typing import Any, cast
 
 from langchain.agents.middleware import AgentMiddleware, AgentState
-from langchain.agents.middleware.types import ModelRequest, ModelResponse
+from langchain.agents.middleware.types import (
+    ModelCallResult,
+    ModelRequest,
+    ModelResponse,
+)
 from langchain.chat_models import BaseChatModel, init_chat_model
 from langchain_core.messages import (
     AnyMessage,
@@ -144,31 +148,37 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
         self.max_tokens_before_extraction = max_tokens_before_extraction
         self.token_counter = token_counter
         self.memory_model = None
-        self.backend = ""
         self._llm = None
 
         # Ensure valid backend and model configuration
         if backend not in BACKENDS or "model" not in BACKENDS[backend]:
-            logger.warning(f"Invalid backend: {backend}. Available choices: {list(BACKENDS.keys())}")
-            self.backend = backend
-            self.extraction_prompt = BACKENDS[backend].get("prompt")
-            try:
-                self.memory_model = cast(type[BaseModel], BACKENDS[backend].get("model"))
-            except Exception as e:
-                logger.error(f"Error casting memory model for backend {backend}: {e}")
+            logger.warning(
+                f"Invalid backend: {backend}. Available choices: {list(BACKENDS.keys())}. "
+                f"Using default backend 'store'."
+            )
+            backend = "store"
 
-        if not extraction_prompt:
+        self.backend = backend
+        if extraction_prompt:
             self.extraction_prompt = extraction_prompt
+        else:
+            self.extraction_prompt = BACKENDS[backend].get("prompt")
+        try:
+            self.memory_model = cast(type[BaseModel], BACKENDS[backend].get("model"))
+        except Exception as e:
+            logger.error(f"Error casting memory model for backend {backend}: {e}")
+
         self.namespace_prefix = namespace_prefix or ["memories"]
 
         if isinstance(self.model, BaseChatModel) and self.memory_model:
             # Create structured output model - store as Any to avoid type issues
             self._llm: Any = self.model.with_structured_output(self.memory_model)
 
-        if not self._llm:
-            logger.error(
-                f"Initiation failed - the middleware [{self.__class__.__name__}] will be skipped during execution."
-            )
+        names = self.__class__.__name__, self.model.__class__.__name__
+        if self._llm is not None:
+            logger.info(f"Initialized middleware {names[0]} with model: {names[1]}, backend: {self.backend}.")
+        else:
+            logger.error(f"Initiation failed - the middleware {names[0]} will be skipped during execution.")
 
     def _should_extract(self, messages: list[AnyMessage]) -> bool:
         """Determine if extraction should be triggered based on token count.
@@ -285,7 +295,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
             self,
             request: ModelRequest,
             handler: Callable[[ModelRequest], ModelResponse],
-    ) -> ModelResponse:
+    ) -> ModelCallResult:
         """Wrap model call with context engineering capabilities.
 
         Current implementation (Phase 1):
@@ -327,5 +337,54 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
             logger.debug(f"Storing memory: {memory}")
             if self.backend == "store" and isinstance(store, (InMemoryStore, SqliteStore, PostgresStore)):
                 store.put(**memory)
+
+        return res
+
+    async def awrap_model_call(
+            self,
+            request: ModelRequest,
+            handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
+    ) -> ModelCallResult:
+        """Asynchronous wrap model call with context engineering capabilities.
+
+        Current implementation (Phase 1):
+        - Executes model call through handler
+        - Extracts memories from conversation post-processing
+        - Stores memories in LangGraph Store backend
+
+        Future enhancements:
+        - Pre-processing: Retrieve relevant context and inject into request
+        - Dynamic formatting: Adjust context based on token budgets
+        - Multi-backend: Support vector DB and custom storage adapters
+        - Relevance scoring: Prioritize most important context
+
+        Args:
+            request: Model request containing state and runtime.
+            handler: Function to execute the actual model call.
+
+        Returns:
+            Model response after context engineering processing.
+        """
+        store = request.runtime.store
+
+        res = await handler(request)
+
+        if not self._llm:
+            # Logs already handled during initiation
+            return res
+
+        if self.backend == "store" and not isinstance(store, (InMemoryStore, SqliteStore, PostgresStore)):
+            logger.debug(
+                f"Store backend of type {type(store).__name__} does not support memory extraction, skipping. "
+                "Please use one of the supported backends: InMemoryStore, SqliteStore, PostgresStore."
+            )
+            return res
+
+        # Phase 1: Extract and store memories for future context
+        memories = self._process_memories(request.state)
+        for memory in memories:
+            logger.debug(f"Storing memory: {memory}")
+            if self.backend == "store" and isinstance(store, (InMemoryStore, SqliteStore, PostgresStore)):
+                await store.aput(**memory)
 
         return res
