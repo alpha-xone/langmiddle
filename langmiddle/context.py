@@ -174,11 +174,12 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
             # Create structured output model - store as Any to avoid type issues
             self._llm: Any = self.model.with_structured_output(self.memory_model)
 
-        names = self.__class__.__name__, self.model.__class__.__name__
         if self._llm is not None:
-            logger.info(f"Initialized middleware {names[0]} with model: {names[1]}, backend: {self.backend}.")
+            logger.info(
+                f"Initialized middleware {self.name} with model: {self.model.__class__.__name__}, backend: {self.backend}."
+            )
         else:
-            logger.error(f"Initiation failed - the middleware {names[0]} will be skipped during execution.")
+            logger.error(f"Initiation failed - the middleware {self.name} will be skipped during execution.")
 
     def _should_extract(self, messages: list[AnyMessage]) -> bool:
         """Determine if extraction should be triggered based on token count.
@@ -320,7 +321,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
 
         res = handler(request)
 
-        if not self._llm:
+        if self._llm is None:
             # Logs already handled during initiation
             return res
 
@@ -369,7 +370,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
 
         res = await handler(request)
 
-        if not self._llm:
+        if self._llm is None:
             # Logs already handled during initiation
             return res
 
