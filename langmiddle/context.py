@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from typing import Any, cast
-from pydantic import BaseModel
 
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
@@ -33,6 +32,7 @@ from langgraph.runtime import Runtime
 from langgraph.store.memory import InMemoryStore
 from langgraph.store.postgres import PostgresStore
 from langgraph.store.sqlite import SqliteStore
+from pydantic import BaseModel
 
 from langmiddle.utils.logging import get_graph_logger
 from langmiddle.utils.messages import filter_tool_messages
