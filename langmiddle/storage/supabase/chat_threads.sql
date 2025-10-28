@@ -5,6 +5,7 @@ create table public.chat_threads (
   metadata jsonb null default '{}'::jsonb,
   created_at timestamp with time zone not null default timezone ('utc'::text, now()),
   updated_at timestamp with time zone not null default timezone ('utc'::text, now()),
+  custom_state jsonb null default '{}'::jsonb,
   constraint chat_threads_pkey primary key (id),
   constraint chat_threads_user_id_fkey foreign KEY (user_id) references auth.users (id) on delete CASCADE
 ) TABLESPACE pg_default;

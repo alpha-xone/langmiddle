@@ -24,7 +24,7 @@ logger = get_graph_logger(__name__)
 # Disable propagation to avoid duplicate logs (LangGraph handles the logging)
 logger._logger.propagate = False
 
-__all__ = ["StorageContext", "ToolMessageRemover", "ChatSaver"]
+__all__ = ["StorageContext", "ToolRemover", "ChatSaver"]
 
 
 @dataclass
@@ -74,7 +74,7 @@ class StorageContext:
     auth_token: str | None = None
 
 
-class ToolMessageRemover(AgentMiddleware[AgentState, Runtime]):
+class ToolRemover(AgentMiddleware[AgentState, Runtime]):
     """
     Middleware to remove tool messages from chat history.
 
@@ -87,8 +87,8 @@ class ToolMessageRemover(AgentMiddleware[AgentState, Runtime]):
             model="openai:gpt-4o",
             tools=[...],
             middleware=[
-                ToolMessageRemover(),   # Remove before and after agent (default)
-                ChatSaver()             # Then save
+                ToolRemover(),    # Remove before and after agent (default)
+                ChatSaver(),      # Then save
             ],
             context_schema=ContextSchema,
         )
@@ -357,6 +357,13 @@ class ChatSaver(AgentMiddleware[AgentState, Runtime]):
                     return {"logs": [logger.debug(log_msg)]}
             return None
 
+        custom_state = None
+        for key, value in state.items():
+            if key not in ("messages", "jump_to"):
+                if custom_state is None:
+                    custom_state = {}
+                custom_state[key] = value
+
         # Prepare credentials based on available context
         credentials = self._prepare_credentials(user_id, auth_token)
 
@@ -367,6 +374,7 @@ class ChatSaver(AgentMiddleware[AgentState, Runtime]):
             messages=messages,
             user_id=user_id,
             saved_msg_ids=self._saved_msg_ids,  # Pass persistent set
+            custom_state=custom_state,
         )
 
         # Update the persistent set with newly saved message IDs

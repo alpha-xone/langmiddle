@@ -77,6 +77,7 @@ class ChatStorage:
         messages: List[AnyMessage],
         user_id: Optional[str] = None,
         saved_msg_ids: Optional[set] = None,
+        custom_state: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Save chat history using the configured backend.
@@ -87,6 +88,7 @@ class ChatStorage:
             messages: List of conversation messages to save
             user_id: Optional user identifier (extracted from credentials if not provided)
             saved_msg_ids: Optional set of already-saved message IDs
+            custom_state: Optional custom state defined in the graph
 
         Returns:
             Dict with status and info:
@@ -140,16 +142,6 @@ class ChatStorage:
                 "saved_msg_ids": saved_msg_ids or set(),
             }
 
-        # Validate user_id
-        if user_id in ["", "Invalid-User-ID", "Empty-User-ID"]:
-            return {
-                "success": False,
-                "saved_count": 0,
-                "errors": [f"Invalid user_id: {user_id}"],
-                "user_id": user_id,
-                "saved_msg_ids": saved_msg_ids or set(),
-            }
-
         # Get existing message IDs if not provided
         if saved_msg_ids is None:
             saved_msg_ids = self.backend.get_existing_message_ids(thread_id)
@@ -184,7 +176,12 @@ class ChatStorage:
             }
 
         # Save messages
-        result = self.backend.save_messages(thread_id, user_id, new_messages)
+        result = self.backend.save_messages(
+            thread_id=thread_id,
+            user_id=user_id,
+            messages=new_messages,
+            custom_state=custom_state,
+        )
 
         # Update saved message IDs for successfully saved messages
         successfully_saved = new_messages[: result["saved_count"]]

@@ -5,6 +5,7 @@ create table public.chat_threads (
   metadata jsonb null default '{}'::jsonb,
   created_at timestamp with time zone not null default timezone ('utc'::text, now()),
   updated_at timestamp with time zone not null default timezone ('utc'::text, now()),
+  custom_state jsonb null default '{}'::jsonb,
   constraint chat_threads_pkey primary key (id)
 ) TABLESPACE pg_default;
 

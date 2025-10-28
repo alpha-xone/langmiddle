@@ -215,7 +215,11 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
             return False
 
     def save_messages(
-        self, thread_id: str, user_id: str, messages: List[AnyMessage]
+        self,
+        thread_id: str,
+        user_id: str,
+        messages: List[AnyMessage],
+        custom_state: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Save messages to database.
@@ -224,12 +228,27 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
             thread_id: Thread identifier
             user_id: User identifier
             messages: List of messages to save
+            custom_state: Optional custom state defined in the graph
 
         Returns:
             Dict with 'saved_count' and 'errors' keys
         """
         saved_count = 0
         errors = []
+
+        # Update custom_state in chat_threads if provided
+        if custom_state:
+            try:
+                self._execute_query(
+                    """
+                    UPDATE chat_threads
+                    SET custom_state = $1
+                    WHERE thread_id = $2
+                    """,
+                    (custom_state, thread_id),
+                )
+            except Exception as e:
+                logger.error(f"Error updating custom_state for thread {thread_id}: {e}")
 
         for msg in messages:
             try:

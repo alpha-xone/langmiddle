@@ -205,7 +205,11 @@ class SQLiteStorageBackend(ChatStorageBackend):
             return False
 
     def save_messages(
-        self, thread_id: str, user_id: str, messages: List[AnyMessage]
+        self,
+        thread_id: str,
+        user_id: str,
+        messages: List[AnyMessage],
+        custom_state: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Save messages to SQLite.
@@ -214,6 +218,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
             thread_id: Thread identifier
             user_id: User identifier
             messages: List of messages to save
+            custom_state: Optional custom state defined in the graph
 
         Returns:
             Dict with 'saved_count' and 'errors' keys
@@ -226,14 +231,33 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
             if self._persistent_conn:
                 # Use persistent connection for in-memory database
+                if not self.ensure_thread_exists(thread_id, user_id):
+                    return {"saved_count": 0, "errors": ["Thread does not exist"]}
+
+                if custom_state:
+                    try:
+                        self._persistent_conn.execute(
+                            """
+                            UPDATE chat_threads
+                            SET metadata = ?
+                            WHERE id = ?
+                        """,
+                            (json.dumps(custom_state), thread_id),
+                        )
+                        logger.debug(
+                            f"Updated custom state for thread {thread_id} in SQLite database"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error updating custom state for thread {thread_id}: {e}")
+
                 for msg in messages:
                     try:
                         self._persistent_conn.execute(
                             """
-                            INSERT OR REPLACE INTO chat_messages
-                            (id, user_id, thread_id, content, role, metadata, usage_metadata)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """,
+                                INSERT OR REPLACE INTO chat_messages
+                                (id, user_id, thread_id, content, role, metadata, usage_metadata)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """,
                             (
                                 msg.id,
                                 user_id,
@@ -254,6 +278,25 @@ class SQLiteStorageBackend(ChatStorageBackend):
             else:
                 # Use context manager for file-based database
                 with sqlite3.connect(self.db_path) as conn:
+                    if not self.ensure_thread_exists(thread_id, user_id):
+                        return {"saved_count": 0, "errors": ["Thread does not exist"]}
+
+                    if custom_state:
+                        try:
+                            conn.execute(
+                                """
+                                    UPDATE chat_threads
+                                    SET metadata = ?
+                                    WHERE id = ?
+                                """,
+                                (json.dumps(custom_state), thread_id),
+                            )
+                            logger.debug(
+                                f"Updated custom state for thread {thread_id} in SQLite database"
+                            )
+                        except Exception as e:
+                            logger.error(f"Error updating custom state for thread {thread_id}: {e}")
+
                     for msg in messages:
                         try:
                             conn.execute(

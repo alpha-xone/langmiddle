@@ -276,7 +276,11 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             return False
 
     def save_messages(
-        self, thread_id: str, user_id: str, messages: List[AnyMessage]
+        self,
+        thread_id: str,
+        user_id: str,
+        messages: List[AnyMessage],
+        custom_state: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Save messages to Supabase.
@@ -285,12 +289,26 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             thread_id: Thread identifier
             user_id: User identifier
             messages: List of messages to save
+            custom_state: Optional custom state defined in the graph
 
         Returns:
             Dict with 'saved_count' and 'errors' keys
         """
         saved_count = 0
         errors = []
+
+        if not self.ensure_thread_exists(thread_id, user_id):
+            errors.append(f"Failed to ensure thread {thread_id} exists")
+            return {"saved_count": saved_count, "errors": errors}
+
+        # Update custom_state in chat_threads if provided
+        if custom_state:
+            try:
+                self.client.table("chat_threads").update(
+                    {"custom_state": custom_state}
+                ).eq("id", thread_id).execute()
+            except Exception as e:
+                errors.append(f"Failed to update custom_state for thread {thread_id}: {e}")
 
         for msg in messages:
             try:
@@ -312,7 +330,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                     .execute()
                 )
 
-                time.sleep(0.05)  # Small delay to avoid rate limiting
+                time.sleep(0.05)  # Small delay to avoid duplicated time
 
                 if not result.data:
                     errors.append(f"Failed to save message {msg.id}")
@@ -390,8 +408,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 query = query.in_("id", ids)
 
             if isinstance(metadata, dict):
-                for k, v in metadata.items():
-                    query = query.filter(f"metadata->>{k}", "eq", v)
+                for key, value in metadata.items():
+                    query = query.filter(f"metadata->>{key}", "eq", value)
 
             threads = (
                 query

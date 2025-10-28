@@ -77,7 +77,11 @@ class ChatStorageBackend(ABC):
 
     @abstractmethod
     def save_messages(
-        self, thread_id: str, user_id: str, messages: List[AnyMessage]
+        self,
+        thread_id: str,
+        user_id: str,
+        messages: List[AnyMessage],
+        custom_state: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Save messages to storage.
@@ -86,6 +90,7 @@ class ChatStorageBackend(ABC):
             thread_id: Thread identifier
             user_id: User identifier
             messages: List of messages to save
+            custom_state: Optional custom state defined in the graph
 
         Returns:
             Dict with 'saved_count' and 'errors' keys

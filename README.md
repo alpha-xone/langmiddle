@@ -21,7 +21,7 @@ Production-ready middleware for **LangChain** and **LangGraph v1** with multi-ba
 
 | Middleware | Description |
 |---|---|
-| ToolMessageRemover | Removes tool-related messages from the conversation state (pre/post agent). |
+| ToolRemover | Removes tool-related messages from the conversation state (pre/post agent). |
 | ChatSaver | Persists chat history to configurable backends (SQLite, Postgres, Supabase, Firebase). |
 
 ## Installation
@@ -49,7 +49,7 @@ pip install langmiddle[all]
 ## Quick Start - LangChain Middleware
 
 ```python
-from langmiddle.history import ChatSaver, ToolMessageRemover, StorageContext
+from langmiddle.history import ChatSaver, ToolRemover, StorageContext
 
 # Initialize middleware with desired backend
 agent = create_agent(
@@ -57,7 +57,7 @@ agent = create_agent(
     tools=[],
     context_schema=StorageContext,
     middleware=[
-        ToolMessageRemover(),
+        ToolRemover(),
         ChatSaver(backend="sqlite", db_path="./chat_history.db")
     ],
 )

@@ -180,7 +180,11 @@ class FirebaseStorageBackend(ChatStorageBackend):
             return False
 
     def save_messages(
-        self, thread_id: str, user_id: str, messages: List[AnyMessage]
+        self,
+        thread_id: str,
+        user_id: str,
+        messages: List[AnyMessage],
+        custom_state: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Save messages to Firestore using batch operations.
@@ -189,6 +193,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
             thread_id: Thread identifier
             user_id: User identifier
             messages: List of messages to save
+            custom_state: Optional custom state defined in the graph
 
         Returns:
             Dict with 'saved_count' and 'errors' keys
@@ -198,6 +203,19 @@ class FirebaseStorageBackend(ChatStorageBackend):
 
         saved_count = 0
         errors = []
+
+        if not self.ensure_thread_exists(thread_id, user_id):
+            errors.append(f"Failed to ensure thread {thread_id} exists")
+            return {"saved_count": saved_count, "errors": errors}
+
+        if custom_state:
+            try:
+                self.db.collection("chat_threads").document(thread_id).update(
+                    {"custom_state": custom_state}
+                )
+            except Exception as e:
+                errors.append(f"Failed to update custom_state for thread {thread_id}: {e}")
+                return {"saved_count": saved_count, "errors": errors}
 
         if not messages:
             return {"saved_count": 0, "errors": []}
