@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from langchain_core.messages import AnyMessage
 
 from ..utils.logging import get_graph_logger
-from .base import ChatStorageBackend
+from .base import ChatStorageBackend, SortOrder, ThreadSortBy
 from .firebase_backend import FirebaseStorageBackend
 from .postgres_backend import PostgreSQLStorageBackend
 from .sqlite_backend import SQLiteStorageBackend
@@ -203,3 +203,46 @@ class ChatStorage:
             "skipped_count": len(messages) - len(new_messages),
             "saved_msg_ids": saved_msg_ids,
         }
+
+    def saerch_threads(
+        self,
+        credentials: Dict[str, Any] | None,
+        metadata: dict | None = None,
+        values: dict | None = None,
+        ids: List[str] | None = None,
+        limit: int = 10,
+        offset: int = 0,
+        sort_by: ThreadSortBy | None = "updated_at",
+        sort_order: SortOrder | None = "desc",
+    ) -> List[dict]:
+        """
+        Search for threads.
+
+        Args:
+            metadata: Thread metadata to filter on.
+            values: State values to filter on.
+            ids: List of thread IDs to filter by.
+            limit: Limit on number of threads to return.
+            offset: Offset in threads table to start search from.
+            sort_by: Sort by field.
+            sort_order: Sort order.
+            headers: Optional custom headers to include with the request.
+
+        Returns:
+            list[dict]: List of the threads matching the search parameters.
+        """
+
+        # Authenticate with backend
+        if not self.backend.authenticate(credentials):
+            logger.error(f"Authentication failed with credentials: {credentials}")
+            return []
+
+        return self.backend.search_threads(
+            metadata=metadata,
+            values=values,
+            ids=ids,
+            limit=limit,
+            offset=offset,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )

@@ -6,9 +6,12 @@ to ensure consistency across different database systems.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from langchain_core.messages import AnyMessage
+
+ThreadSortBy = Literal["thread_id", "status", "created_at", "updated_at"]
+SortOrder = Literal["asc", "desc"]
 
 __all__ = ["ChatStorageBackend"]
 
@@ -87,4 +90,63 @@ class ChatStorageBackend(ABC):
         Returns:
             Dict with 'saved_count' and 'errors' keys
         """
+        raise NotImplementedError("`save_messages` not implemented")
+
+    @abstractmethod
+    def get_thread(
+        self,
+        thread_id: str,
+    ) -> dict | None:
+        """
+        Get a thread by ID.
+
+        Args:
+            thread_id: The ID of the thread to get.
+        """
         pass
+
+    @abstractmethod
+    def search_threads(
+        self,
+        *,
+        metadata: dict | None = None,
+        values: dict | None = None,
+        ids: List[str] | None = None,
+        limit: int = 10,
+        offset: int = 0,
+        sort_by: ThreadSortBy | None = None,
+        sort_order: SortOrder | None = None,
+    ) -> List[dict]:
+        """
+        Search for threads.
+
+        Args:
+            metadata: Thread metadata to filter on.
+            values: State values to filter on.
+            ids: List of thread IDs to filter by.
+            limit: Limit on number of threads to return.
+            offset: Offset in threads table to start search from.
+            sort_by: Sort by field.
+            sort_order: Sort order.
+            headers: Optional custom headers to include with the request.
+
+        Returns:
+            list[dict]: List of the threads matching the search parameters.
+        """
+        raise NotImplementedError("`search_threads` not implemented.")
+
+    @abstractmethod
+    def delete_thread(
+        self,
+        thread_id: str,
+    ):
+        """
+        Delete a thread.
+
+        Args:
+            thread_id: The ID of the thread to delete.
+
+        Returns:
+            None
+        """
+        raise NotImplementedError("`delete_thread` not implemented")

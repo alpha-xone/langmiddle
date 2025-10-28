@@ -13,6 +13,7 @@ from jose import JWTError, jwt
 from langchain_core.messages import AnyMessage
 
 from ..utils.logging import get_graph_logger
+from .base import SortOrder, ThreadSortBy
 from .postgres_base import PostgreSQLBaseBackend
 
 logger = get_graph_logger(__name__)
@@ -325,3 +326,145 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 logger.error(f"Error saving message {msg.id}: {e}")
 
         return {"saved_count": saved_count, "errors": errors}
+
+    def get_thread(
+        self,
+        thread_id: str,
+    ) -> dict | None:
+        """
+        Get a thread by ID.
+
+        Args:
+            thread_id: The ID of the thread to get.
+        """
+        try:
+            result = (
+                self.client
+                .table("chat_threads")
+                .select("id")
+                .eq("id", thread_id)
+                .execute()
+            )
+            if not result.data:
+                return None
+            return {"thread_id": result.data[0]["id"]}
+
+        except Exception as e:
+            logger.error(f"Error retrieving thread by ID {thread_id}: {e}")
+
+    def search_threads(
+        self,
+        *,
+        metadata: dict | None = None,
+        values: dict | None = None,
+        ids: List[str] | None = None,
+        limit: int = 10,
+        offset: int = 0,
+        sort_by: ThreadSortBy | None = "updated_at",
+        sort_order: SortOrder | None = "desc",
+    ) -> List[dict]:
+        """
+        Search for threads.
+
+        Args:
+            metadata: Thread metadata to filter on.
+            values: State values to filter on.
+            ids: List of thread IDs to filter by.
+            limit: Limit on number of threads to return.
+            offset: Offset in threads table to start search from.
+            sort_by: Sort by field.
+            sort_order: Sort order.
+            headers: Optional custom headers to include with the request.
+
+        Returns:
+            list[dict]: List of the threads matching the search parameters.
+        """
+        try:
+            query = (
+                self.client
+                .table("chat_threads")
+                .select("*")
+            )
+
+            if ids:
+                query = query.in_("id", ids)
+
+            if isinstance(metadata, dict):
+                for k, v in metadata.items():
+                    query = query.filter(f"metadata->>{k}", "eq", v)
+
+            threads = (
+                query
+                .order("created_at", desc=True if sort_order is None else sort_order == "desc")
+                .offset(size=offset)
+                .limit(size=limit)
+                .execute()
+            )
+            if not threads.data:
+                return []
+
+            thread_ids = [msg["id"] for msg in threads.data]
+            messages = (
+                self.client
+                .table("chat_messages")
+                .select("*")
+                .in_("thread_id", thread_ids)
+                .order("created_at", desc=False)
+                .execute()
+            )
+            if not messages.data:
+                return threads.data
+
+            return [
+                {
+                    "thread_id": thread["id"],
+                    "title": thread["title"],
+                    "created_at": thread["created_at"],
+                    "updated_at": thread["updated_at"],
+                    "metadata": thread["metadata"],
+                    "values": [
+                        {
+                            "content": msg["content"],
+                            "role": msg["role"],
+                            "created_at": msg["created_at"],
+                            "metadata": msg["metadata"],
+                            "usage_metadata": msg["usage_metadata"],
+                            "id": msg["id"],
+                        }
+                        for msg in messages.data
+                        if msg["thread_id"] == thread["id"]
+                    ]
+                }
+                for thread in threads.data
+            ]
+
+        except Exception as e:
+            logger.error(f"Error retrieving threads: {e}")
+
+        return []
+
+    def delete_thread(
+        self,
+        thread_id: str,
+    ):
+        """
+        Delete a thread.
+
+        Args:
+            thread_id: The ID of the thread to delete.
+
+        Returns:
+            None
+        """
+        try:
+            result = (
+                self.client
+                .table("chat_threads")
+                .delete()
+                .eq("id", thread_id)
+                .execute()
+            )
+            logger.info(str(result.data))
+
+        except Exception as e:
+            logger.error(f"Error retrieving threads: {e}")
