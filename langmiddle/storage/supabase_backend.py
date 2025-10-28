@@ -420,6 +420,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             )
             if not threads.data:
                 return []
+            logger.debug(f"Found {len(threads.data)} threads matching search criteria")
 
             thread_ids = [msg["id"] for msg in threads.data]
             messages = (
@@ -432,29 +433,37 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             )
             if not messages.data:
                 return threads.data
+            logger.debug(f"Found {len(messages.data)} messages matching search criteria")
 
-            return [
-                {
+            res = []
+            for thread in threads.data:
+                data = {
                     "thread_id": thread["id"],
                     "title": thread["title"],
                     "created_at": thread["created_at"],
                     "updated_at": thread["updated_at"],
                     "metadata": thread["metadata"],
-                    "values": [
-                        {
-                            "content": msg["content"],
-                            "role": msg["role"],
-                            "created_at": msg["created_at"],
-                            "metadata": msg["metadata"],
-                            "usage_metadata": msg["usage_metadata"],
-                            "id": msg["id"],
-                        }
-                        for msg in messages.data
-                        if msg["thread_id"] == thread["id"]
-                    ]
+                    "values": {
+                        "messages": [
+                            {
+                                "content": msg["content"],
+                                "role": msg["role"],
+                                "created_at": msg["created_at"],
+                                "metadata": msg["metadata"],
+                                "usage_metadata": msg["usage_metadata"],
+                                "id": msg["id"],
+                            }
+                            for msg in messages.data
+                            if msg["thread_id"] == thread["id"]
+                        ],
+                    },
                 }
-                for thread in threads.data
-            ]
+                custom_state = thread.get("custom_state")
+                if custom_state:
+                    data["values"].update(custom_state)
+                res.append(data)
+
+            return res
 
         except Exception as e:
             logger.error(f"Error retrieving threads: {e}")
