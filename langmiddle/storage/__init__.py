@@ -201,7 +201,29 @@ class ChatStorage:
             "saved_msg_ids": saved_msg_ids,
         }
 
-    def saerch_threads(
+    def get_thread(
+        self,
+        thread_id: str,
+        credentials: Dict[str, Any] | None,
+    ) -> dict | None:
+        """
+        Get a thread.
+
+        Args:
+            thread_id: Thread identifier for the conversation
+            credentials: Authentication credentials (format varies by backend)
+
+        Returns:
+            dict: The thread matching the thread_id, or None if not found.
+        """
+        # Authenticate with backend
+        if not self.backend.authenticate(credentials):
+            logger.error(f"Authentication failed with credentials: {credentials}")
+            return None
+
+        return self.backend.get_thread(thread_id)
+
+    def search_threads(
         self,
         credentials: Dict[str, Any] | None,
         metadata: dict | None = None,
@@ -228,7 +250,6 @@ class ChatStorage:
         Returns:
             list[dict]: List of the threads matching the search parameters.
         """
-
         # Authenticate with backend
         if not self.backend.authenticate(credentials):
             logger.error(f"Authentication failed with credentials: {credentials}")

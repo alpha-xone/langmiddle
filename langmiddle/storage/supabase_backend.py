@@ -21,6 +21,45 @@ logger = get_graph_logger(__name__)
 __all__ = ["SupabaseStorageBackend"]
 
 
+def thread_to_dict(thread: dict, messages: List[dict]) -> dict:
+    """
+    Convert a Supabase thread record to a dictionary.
+
+    Args:
+        thread: Supabase thread record
+        messages: List of messages associated with the thread
+
+    Returns:
+        dict representation of the thread
+    """
+    thread_id = thread.get("id")
+    data = {
+        "thread_id": thread_id,
+        "title": thread.get("title"),
+        "created_at": thread.get("created_at"),
+        "updated_at": thread.get("updated_at"),
+        "metadata": thread.get("metadata"),
+        "values": {
+            "messages": [
+                {
+                    "content": msg.get("content"),
+                    "role": msg.get("role"),
+                    "created_at": msg.get("created_at"),
+                    "metadata": msg.get("metadata"),
+                    "usage_metadata": msg.get("usage_metadata"),
+                    "id": msg.get("id"),
+                }
+                for msg in messages
+                if msg.get("thread_id") == thread_id
+            ],
+        },
+    }
+    if thread.get("custom_state"):
+        data["values"].update(thread["custom_state"])
+
+    return data
+
+
 class SupabaseStorageBackend(PostgreSQLBaseBackend):
     """Supabase implementation of chat storage backend."""
 
@@ -214,6 +253,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Returns:
             Set of existing message IDs
         """
+        # Execute query separately and handle errors per operation
         try:
             result = (
                 self.client.table("chat_messages")
@@ -221,7 +261,11 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 .eq("thread_id", thread_id)
                 .execute()
             )
+        except Exception as e:
+            logger.error(f"Error executing message id query for thread {thread_id}: {e}")
+            return set()
 
+        try:
             if result.data:
                 message_ids = {
                     msg["id"]
@@ -233,9 +277,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 )
                 return message_ids
             return set()
-
         except Exception as e:
-            logger.error(f"Error fetching existing messages: {e}")
+            logger.error(f"Error processing message id results for thread {thread_id}: {e}")
             return set()
 
     def ensure_thread_exists(self, thread_id: str, user_id: str) -> bool:
@@ -355,20 +398,42 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Args:
             thread_id: The ID of the thread to get.
         """
+        # Fetch thread record
         try:
-            result = (
+            thread = (
                 self.client
                 .table("chat_threads")
-                .select("id")
+                .select("*")
                 .eq("id", thread_id)
                 .execute()
             )
-            if not result.data:
-                return None
-            return {"thread_id": result.data[0]["id"]}
-
         except Exception as e:
-            logger.error(f"Error retrieving thread by ID {thread_id}: {e}")
+            logger.error(f"Error executing thread query for id {thread_id}: {e}")
+            return None
+
+        if not thread.data:
+            return None
+
+        # Fetch messages for the thread in a separate operation
+        try:
+            messages = (
+                self.client
+                .table("chat_messages")
+                .select("*")
+                .eq("thread_id", thread_id)
+                .order("created_at", desc=False)
+                .execute()
+            )
+            msgs = messages.data if messages.data else []
+        except Exception as e:
+            logger.error(f"Error executing messages query for thread {thread_id}: {e}")
+            msgs = []
+
+        try:
+            return thread_to_dict(thread.data[0], msgs)
+        except Exception as e:
+            logger.error(f"Error building thread dict for id {thread_id}: {e}")
+            return None
 
     def search_threads(
         self,
@@ -397,6 +462,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Returns:
             list[dict]: List of the threads matching the search parameters.
         """
+        # Build and execute threads query
         try:
             query = (
                 self.client
@@ -418,11 +484,19 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 .limit(size=limit)
                 .execute()
             )
-            if not threads.data:
-                return []
-            logger.debug(f"Found {len(threads.data)} threads matching search criteria")
+        except Exception as e:
+            logger.error(f"Error executing threads query: {e}")
+            return []
 
-            thread_ids = [msg["id"] for msg in threads.data]
+        if not threads.data:
+            return []
+
+        logger.debug(f"Found {len(threads.data)} threads matching search criteria")
+
+        # Fetch messages for all returned threads in a separate operation
+        thread_ids = [thread["id"] for thread in threads.data]
+        msgs = []
+        try:
             messages = (
                 self.client
                 .table("chat_messages")
@@ -431,44 +505,19 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 .order("created_at", desc=False)
                 .execute()
             )
-            if not messages.data:
-                return threads.data
-            logger.debug(f"Found {len(messages.data)} messages matching search criteria")
-
-            res = []
-            for thread in threads.data:
-                data = {
-                    "thread_id": thread["id"],
-                    "title": thread["title"],
-                    "created_at": thread["created_at"],
-                    "updated_at": thread["updated_at"],
-                    "metadata": thread["metadata"],
-                    "values": {
-                        "messages": [
-                            {
-                                "content": msg["content"],
-                                "role": msg["role"],
-                                "created_at": msg["created_at"],
-                                "metadata": msg["metadata"],
-                                "usage_metadata": msg["usage_metadata"],
-                                "id": msg["id"],
-                            }
-                            for msg in messages.data
-                            if msg["thread_id"] == thread["id"]
-                        ],
-                    },
-                }
-                custom_state = thread.get("custom_state")
-                if custom_state:
-                    data["values"].update(custom_state)
-                res.append(data)
-
-            return res
-
+            msgs = messages.data if messages.data else []
         except Exception as e:
-            logger.error(f"Error retrieving threads: {e}")
+            logger.error(f"Error executing messages query for threads: {e}")
+            # Return threads without attached messages
+            return threads.data
 
-        return []
+        logger.debug(f"Found {len(msgs)} messages matching search criteria")
+
+        try:
+            return [thread_to_dict(thread, msgs) for thread in threads.data]
+        except Exception as e:
+            logger.error(f"Error building thread dicts from results: {e}")
+            return []
 
     def delete_thread(
         self,

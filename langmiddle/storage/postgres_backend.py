@@ -5,11 +5,13 @@ This module provides direct PostgreSQL implementation of the chat storage interf
 using psycopg2 for database connections.
 """
 
+import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from ..utils.logging import get_graph_logger
+from .base import SortOrder, ThreadSortBy
 from .postgres_base import PostgreSQLBaseBackend
 
 logger = get_graph_logger(__name__)
@@ -206,3 +208,226 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
     def __del__(self):
         """Cleanup on deletion."""
         self.close()
+
+    def get_thread(
+        self,
+        thread_id: str,
+    ) -> dict | None:
+        """
+        Get a thread by ID.
+
+        Args:
+            thread_id: The ID of the thread to get.
+        """
+        try:
+            result = self._execute_query(
+                "SELECT id, user_id, created_at, updated_at, custom_state FROM chat_threads WHERE id = %s",
+                params=(thread_id,),
+                fetch_one=True,
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving thread record for ID {thread_id}: {e}")
+            return None
+
+        if not result:
+            return None
+
+        # Fetch messages for this thread
+        try:
+            messages = self._execute_query(
+                "SELECT id, content, role, created_at, metadata, usage_metadata FROM chat_messages WHERE thread_id = %s ORDER BY created_at ASC",
+                params=(thread_id,),
+                fetch_all=True,
+            ) or []
+        except Exception as e:
+            logger.error(f"Error retrieving messages for thread {thread_id}: {e}")
+            messages = []
+
+        msgs = []
+        try:
+            for row in messages:
+                msg = {
+                    "id": row[0],
+                    "content": row[1],
+                    "role": row[2],
+                    "created_at": row[3],
+                    "metadata": json.loads(row[4]) if isinstance(row[4], str) and row[4] else row[4],
+                    "usage_metadata": json.loads(row[5]) if isinstance(row[5], str) and row[5] else row[5],
+                }
+                msgs.append(msg)
+        except Exception:
+            # If parsing fails, fall back to raw rows
+            msgs = [
+                {
+                    "id": r[0],
+                    "content": r[1],
+                    "role": r[2],
+                    "created_at": r[3],
+                }
+                for r in messages
+            ]
+
+        thread = {
+            "thread_id": result[0],
+            "user_id": result[1],
+            "created_at": result[2],
+            "updated_at": result[3],
+            "metadata": result[4],
+            "values": {"messages": msgs},
+        }
+
+        # Merge custom_state into values if present
+        try:
+            if result[4]:
+                thread["values"].update(
+                    result[4] if isinstance(result[4], dict) else json.loads(result[4])
+                )
+        except Exception:
+            pass
+
+        return thread
+
+    def search_threads(
+        self,
+        *,
+        metadata: dict | None = None,
+        values: dict | None = None,
+        ids: List[str] | None = None,
+        limit: int = 10,
+        offset: int = 0,
+        sort_by: ThreadSortBy | None = None,
+        sort_order: SortOrder | None = None,
+    ) -> List[dict]:
+        """
+        Search for threads.
+
+        Args:
+            metadata: Thread metadata to filter on.
+            values: State values to filter on.
+            ids: List of thread IDs to filter by.
+            limit: Limit on number of threads to return.
+            offset: Offset in threads table to start search from.
+            sort_by: Sort by field.
+            sort_order: Sort order.
+
+        Returns:
+            list[dict]: List of the threads matching the search parameters.
+        """
+        try:
+            # Build query dynamically
+            query_parts = ["SELECT id, user_id, created_at, updated_at, custom_state FROM chat_threads"]
+            params = []
+            conditions = []
+
+            # Filter by IDs if provided
+            if ids:
+                placeholders = ", ".join(["%s"] * len(ids))
+                conditions.append(f"id IN ({placeholders})")
+                params.extend(ids)
+
+            # Apply metadata filters (stored as JSON in custom_state)
+            if metadata:
+                for key, value in metadata.items():
+                    conditions.append("custom_state->>%s = %s")
+                    params.extend([key, str(value)])
+
+            # Add WHERE clause if we have conditions
+            if conditions:
+                query_parts.append("WHERE " + " AND ".join(conditions))
+
+            # Add sorting
+            if sort_by:
+                direction = "DESC" if sort_order == "desc" else "ASC"
+                query_parts.append(f"ORDER BY {sort_by} {direction}")
+
+            # Add limit and offset
+            query_parts.append("LIMIT %s OFFSET %s")
+            params.extend([limit, offset])
+
+            query = " ".join(query_parts)
+
+            results = self._execute_query(query, params=tuple(params), fetch_all=True)
+        except Exception as e:
+            logger.error(f"Error executing threads query: {e}")
+            return []
+
+        if not results:
+            return []
+
+        # Collect thread ids and fetch messages in one query
+        thread_ids = [row[0] for row in results]
+        msgs_by_thread = {}
+        if thread_ids:
+            try:
+                placeholders = ", ".join(["%s"] * len(thread_ids))
+                msg_query = f"SELECT id, content, role, created_at, metadata, usage_metadata, thread_id FROM chat_messages WHERE thread_id IN ({placeholders}) ORDER BY created_at ASC"
+                msg_results = self._execute_query(msg_query, params=tuple(thread_ids), fetch_all=True) or []
+
+                for row in msg_results:
+                    tid = row[6]
+                    m = {
+                        "id": row[0],
+                        "content": row[1],
+                        "role": row[2],
+                        "created_at": row[3],
+                        "metadata": json.loads(row[4]) if isinstance(row[4], str) and row[4] else row[4],
+                        "usage_metadata": json.loads(row[5]) if isinstance(row[5], str) and row[5] else row[5],
+                    }
+                    msgs_by_thread.setdefault(tid, []).append(m)
+            except Exception as e:
+                logger.error(f"Error retrieving messages for threads: {e}")
+
+        threads = []
+
+        for row in results:
+            thread_id = row[0]
+            thread_info = {
+                "thread_id": thread_id,
+                "user_id": row[1],
+                "created_at": row[2],
+                "updated_at": row[3],
+                "metadata": row[4],
+                "values": {"messages": msgs_by_thread.get(thread_id, [])},
+            }
+            try:
+                if row[4]:
+                    thread_info["values"].update(row[4] if isinstance(row[4], dict) else json.loads(row[4]))
+            except Exception:
+                pass
+            threads.append(thread_info)
+
+        logger.debug(f"Found {len(threads)} threads matching search criteria")
+        return threads
+
+    def delete_thread(
+        self,
+        thread_id: str,
+    ):
+        """
+        Delete a thread.
+
+        Args:
+            thread_id: The ID of the thread to delete.
+
+        Returns:
+            None
+        """
+        # Delete messages first (due to foreign key constraint)
+        try:
+            self._execute_query(
+                "DELETE FROM chat_messages WHERE thread_id = %s",
+                params=(thread_id,),
+            )
+        except Exception as e:
+            logger.error(f"Error deleting messages for thread {thread_id}: {e}")
+            return
+
+        # Delete the thread record
+        try:
+            self._execute_query(
+                "DELETE FROM chat_threads WHERE id = %s",
+                params=(thread_id,),
+            )
+            logger.info(f"Deleted thread {thread_id} and all its messages")
+        except Exception as e:
+            logger.error(f"Error deleting thread {thread_id}: {e}")

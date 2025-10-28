@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from langchain_core.messages import AnyMessage
 
 from ..utils.logging import get_graph_logger
-from .base import ChatStorageBackend
+from .base import ChatStorageBackend, SortOrder, ThreadSortBy
 
 logger = get_graph_logger(__name__)
 
@@ -21,14 +21,14 @@ try:
     from google.cloud.firestore_v1.base_query import FieldFilter
 
     FIREBASE_AVAILABLE = True
-except ImportError:
-    FIREBASE_AVAILABLE = False
-    # Create dummy objects to satisfy type checker
-    firebase_admin = None
-    firestore = None
-    auth = None
-    FieldFilter = None
-    SERVER_TIMESTAMP = None
+except ImportError as e:
+    # Fail fast: require firebase-admin and google-cloud-firestore to use this backend
+    raise ImportError(
+        "Firebase dependencies not installed. To use the Firebase backend please install:\n"
+        "  pip install firebase-admin google-cloud-firestore\n"
+        "Optionally, you may also need google-auth if not already present.\n"
+        f"Original error: {e}"
+    )
 
 __all__ = ["FirebaseStorageBackend"]
 
@@ -256,3 +256,148 @@ class FirebaseStorageBackend(ChatStorageBackend):
             saved_count = 0
 
         return {"saved_count": saved_count, "errors": errors}
+
+    def get_thread(
+        self,
+        thread_id: str,
+    ) -> dict | None:
+        """
+        Get a thread by ID.
+
+        Args:
+            thread_id: The ID of the thread to get.
+        """
+        if not FIREBASE_AVAILABLE:
+            logger.error("Firebase not available")
+            return None
+
+        try:
+            thread_ref = self.db.collection("chat_threads").document(thread_id)
+            thread_doc = thread_ref.get()
+
+            if not thread_doc.exists:
+                return None
+
+            thread_data = thread_doc.to_dict()
+            return {
+                "thread_id": thread_doc.id,
+                "user_id": thread_data.get("user_id"),
+                "created_at": thread_data.get("created_at"),
+                "updated_at": thread_data.get("updated_at"),
+                "custom_state": thread_data.get("custom_state"),
+            }
+
+        except Exception as e:
+            logger.error(f"Error retrieving thread by ID {thread_id}: {e}")
+            return None
+
+    def search_threads(
+        self,
+        *,
+        metadata: dict | None = None,
+        values: dict | None = None,
+        ids: List[str] | None = None,
+        limit: int = 10,
+        offset: int = 0,
+        sort_by: ThreadSortBy | None = "updated_at",
+        sort_order: SortOrder | None = "desc",
+    ) -> List[dict]:
+        """
+        Search for threads.
+
+        Args:
+            metadata: Thread metadata to filter on.
+            values: State values to filter on.
+            ids: List of thread IDs to filter by.
+            limit: Limit on number of threads to return.
+            offset: Offset in threads table to start search from.
+            sort_by: Sort by field.
+            sort_order: Sort order.
+
+        Returns:
+            list[dict]: List of the threads matching the search parameters.
+        """
+        if not FIREBASE_AVAILABLE:
+            logger.error("Firebase not available")
+            return []
+
+        try:
+            query = self.db.collection("chat_threads")
+
+            # Filter by IDs if provided
+            if ids:
+                query = query.where("id", "in", ids[:10])  # Firestore 'in' limit is 10
+            # Apply sorting
+            if sort_by:
+                direction = firestore.Query.DESCENDING if sort_order == "desc" else firestore.Query.ASCENDING   # type: ignore
+                query = query.order_by(sort_by, direction=direction)
+
+            # Apply limit and offset
+            query = query.limit(limit)
+            if offset > 0:
+                # Firestore doesn't support offset directly, this is a simplified approach
+                # In production, you'd want to use cursors or document snapshots
+                logger.warning("Offset not fully supported in Firebase implementation")
+
+            docs = query.stream()
+
+            threads = []
+            for doc in docs:
+                thread_data = doc.to_dict()
+                thread_info = {
+                    "thread_id": doc.id,
+                    "user_id": thread_data.get("user_id"),
+                    "created_at": thread_data.get("created_at"),
+                    "updated_at": thread_data.get("updated_at"),
+                    "custom_state": thread_data.get("custom_state"),
+                }
+                threads.append(thread_info)
+
+            logger.debug(f"Found {len(threads)} threads matching search criteria")
+            return threads
+
+        except Exception as e:
+            logger.error(f"Error searching threads: {e}")
+            return []
+
+    def delete_thread(
+        self,
+        thread_id: str,
+    ):
+        """
+        Delete a thread.
+
+        Args:
+            thread_id: The ID of the thread to delete.
+
+        Returns:
+            None
+        """
+        if not FIREBASE_AVAILABLE:
+            logger.error("Firebase not available")
+            return
+
+        # First fetch messages for the thread
+        try:
+            messages_ref = self.db.collection("chat_messages")
+            filter_obj = FieldFilter("thread_id", "==", thread_id)  # type: ignore
+            messages_query = messages_ref.where(filter=filter_obj)
+            messages_docs = list(messages_query.stream())
+        except Exception as e:
+            logger.error(f"Error fetching messages for deletion for thread {thread_id}: {e}")
+            return
+
+        # Now perform deletes in a separate operation / try block
+        try:
+            batch = self.db.batch()
+            for doc in messages_docs:
+                batch.delete(doc.reference)
+
+            # Delete the thread document
+            thread_ref = self.db.collection("chat_threads").document(thread_id)
+            batch.delete(thread_ref)
+
+            batch.commit()
+            logger.info(f"Deleted thread {thread_id} and all its messages")
+        except Exception as e:
+            logger.error(f"Error committing deletion for thread {thread_id}: {e}")

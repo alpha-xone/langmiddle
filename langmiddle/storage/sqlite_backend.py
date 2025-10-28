@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from langchain_core.messages import AnyMessage
 
 from ..utils.logging import get_graph_logger
-from .base import ChatStorageBackend
+from .base import ChatStorageBackend, SortOrder, ThreadSortBy
 
 logger = get_graph_logger(__name__)
 
@@ -332,3 +332,257 @@ class SQLiteStorageBackend(ChatStorageBackend):
             logger.error(f"SQLite database error: {e}")
 
         return {"saved_count": saved_count, "errors": errors}
+
+    def get_thread(
+        self,
+        thread_id: str,
+    ) -> dict | None:
+        """
+        Get a thread by ID.
+
+        Args:
+            thread_id: The ID of the thread to get.
+        """
+        # Fetch thread record
+        try:
+            if self._persistent_conn:
+                cursor = self._persistent_conn.execute(
+                    "SELECT id, user_id, created_at, updated_at, custom_state FROM chat_threads WHERE id = ?",
+                    (thread_id,),
+                )
+                result = cursor.fetchone()
+            else:
+                with sqlite3.connect(self.db_path) as conn:
+                    cursor = conn.execute(
+                        "SELECT id, user_id, created_at, updated_at, custom_state FROM chat_threads WHERE id = ?",
+                        (thread_id,),
+                    )
+                    result = cursor.fetchone()
+        except Exception as e:
+            logger.error(f"Error executing thread query for id {thread_id}: {e}")
+            return None
+
+        if not result:
+            return None
+
+        # Fetch messages for this thread
+        msgs = []
+        try:
+            if self._persistent_conn:
+                cursor = self._persistent_conn.execute(
+                    "SELECT id, content, role, created_at, metadata, usage_metadata FROM chat_messages WHERE thread_id = ? ORDER BY created_at ASC",
+                    (thread_id,),
+                )
+                rows = cursor.fetchall()
+            else:
+                with sqlite3.connect(self.db_path) as conn:
+                    cursor = conn.execute(
+                        "SELECT id, content, role, created_at, metadata, usage_metadata FROM chat_messages WHERE thread_id = ? ORDER BY created_at ASC",
+                        (thread_id,),
+                    )
+                    rows = cursor.fetchall()
+
+            for r in rows:
+                msgs.append(
+                    {
+                        "id": r[0],
+                        "content": r[1],
+                        "role": r[2],
+                        "created_at": r[3],
+                        "metadata": json.loads(r[4]) if r[4] else None,
+                        "usage_metadata": json.loads(r[5]) if r[5] else None,
+                    }
+                )
+        except Exception as e:
+            logger.error(f"Error fetching messages for thread {thread_id}: {e}")
+            msgs = []
+
+        return {
+            "thread_id": result[0],
+            "user_id": result[1],
+            "created_at": result[2],
+            "updated_at": result[3],
+            "custom_state": json.loads(result[4]) if result[4] else None,
+            "values": {"messages": msgs},
+        }
+
+    def search_threads(
+        self,
+        *,
+        metadata: dict | None = None,
+        values: dict | None = None,
+        ids: List[str] | None = None,
+        limit: int = 10,
+        offset: int = 0,
+        sort_by: ThreadSortBy | None = "updated_at",
+        sort_order: SortOrder | None = "desc",
+    ) -> List[dict]:
+        """
+        Search for threads.
+
+        Args:
+            metadata: Thread metadata to filter on.
+            values: State values to filter on.
+            ids: List of thread IDs to filter by.
+            limit: Limit on number of threads to return.
+            offset: Offset in threads table to start search from.
+            sort_by: Sort by field.
+            sort_order: Sort order.
+
+        Returns:
+            list[dict]: List of the threads matching the search parameters.
+        """
+        try:
+            # Build query dynamically
+            query_parts = ["SELECT id, user_id, created_at, updated_at, custom_state FROM chat_threads"]
+            params = []
+            conditions = []
+
+            # Filter by IDs if provided
+            if ids:
+                placeholders = ", ".join(["?"] * len(ids))
+                conditions.append(f"id IN ({placeholders})")
+                params.extend(ids)
+
+            # Apply metadata filters (stored as JSON in custom_state)
+            if metadata:
+                for key, value in metadata.items():
+                    # SQLite JSON support is limited, so we'll do a simple string search
+                    # In production, you might want to use a more sophisticated approach
+                    conditions.append("custom_state LIKE ?")
+                    params.append(f'%"{key}":"{value}"%')
+
+            # Add WHERE clause if we have conditions
+            if conditions:
+                query_parts.append("WHERE " + " AND ".join(conditions))
+
+            # Add sorting
+            if sort_by:
+                direction = "DESC" if sort_order == "desc" else "ASC"
+                query_parts.append(f"ORDER BY {sort_by} {direction}")
+
+            # Add limit and offset
+            query_parts.append("LIMIT ? OFFSET ?")
+            params.extend([limit, offset])
+
+            query = " ".join(query_parts)
+
+            if self._persistent_conn:
+                cursor = self._persistent_conn.execute(query, params)
+                results = cursor.fetchall()
+            else:
+                with sqlite3.connect(self.db_path) as conn:
+                    cursor = conn.execute(query, params)
+                    results = cursor.fetchall()
+
+            if not results:
+                return []
+
+            thread_ids = [row[0] for row in results]
+            msgs = []
+            try:
+                if thread_ids:
+                    placeholders = ",".join(["?"] * len(thread_ids))
+                    q = f"SELECT id, content, role, created_at, metadata, usage_metadata, thread_id FROM chat_messages WHERE thread_id IN ({placeholders}) ORDER BY created_at ASC"
+                    if self._persistent_conn:
+                        cursor = self._persistent_conn.execute(q, thread_ids)
+                        msg_rows = cursor.fetchall()
+                    else:
+                        with sqlite3.connect(self.db_path) as conn:
+                            cursor = conn.execute(q, thread_ids)
+                            msg_rows = cursor.fetchall()
+
+                    for r in msg_rows:
+                        msgs.append({
+                            "id": r[0],
+                            "content": r[1],
+                            "role": r[2],
+                            "created_at": r[3],
+                            "metadata": json.loads(r[4]) if r[4] else None,
+                            "usage_metadata": json.loads(r[5]) if r[5] else None,
+                            "thread_id": r[6],
+                        })
+            except Exception as e:
+                logger.error(f"Error fetching messages for threads: {e}")
+                msgs = []
+
+            # Map messages to their threads
+            msgs_by_thread: dict = {}
+            for m in msgs:
+                msgs_by_thread.setdefault(m.get("thread_id"), []).append(m)
+
+            threads = []
+            for row in results:
+                thread_id = row[0]
+                thread_info = {
+                    "thread_id": thread_id,
+                    "user_id": row[1],
+                    "created_at": row[2],
+                    "updated_at": row[3],
+                    "custom_state": json.loads(row[4]) if row[4] else None,
+                    "values": {"messages": msgs_by_thread.get(thread_id, [])},
+                }
+                threads.append(thread_info)
+
+            logger.debug(f"Found {len(threads)} threads matching search criteria")
+            return threads
+
+        except Exception as e:
+            logger.error(f"Error searching threads: {e}")
+            return []
+
+    def delete_thread(
+        self,
+        thread_id: str,
+    ):
+        """
+        Delete a thread.
+
+        Args:
+            thread_id: The ID of the thread to delete.
+
+        Returns:
+            None
+        """
+        # Delete messages first (due to foreign key constraint)
+        if self._persistent_conn:
+            try:
+                self._persistent_conn.execute(
+                    "DELETE FROM chat_messages WHERE thread_id = ?",
+                    (thread_id,),
+                )
+            except Exception as e:
+                logger.error(f"Error deleting messages for thread {thread_id}: {e}")
+                return
+
+            try:
+                self._persistent_conn.execute(
+                    "DELETE FROM chat_threads WHERE id = ?",
+                    (thread_id,),
+                )
+                self._persistent_conn.commit()
+                logger.info(f"Deleted thread {thread_id} and all its messages")
+            except Exception as e:
+                logger.error(f"Error deleting thread {thread_id}: {e}")
+        else:
+            # file-based DB
+            try:
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute(
+                        "DELETE FROM chat_messages WHERE thread_id = ?",
+                        (thread_id,),
+                    )
+            except Exception as e:
+                logger.error(f"Error deleting messages for thread {thread_id}: {e}")
+                return
+
+            try:
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute(
+                        "DELETE FROM chat_threads WHERE id = ?",
+                        (thread_id,),
+                    )
+                    conn.commit()
+                logger.info(f"Deleted thread {thread_id} and all its messages")
+            except Exception as e:
+                logger.error(f"Error deleting thread {thread_id}: {e}")
