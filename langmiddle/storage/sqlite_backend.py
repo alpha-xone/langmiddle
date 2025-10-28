@@ -61,9 +61,11 @@ class SQLiteStorageBackend(ChatStorageBackend):
                     CREATE TABLE IF NOT EXISTS chat_threads (
                         id TEXT PRIMARY KEY,
                         user_id TEXT NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        custom_state TEXT DEFAULT '{}'::text
                     )
-                """
+                    """
                 )
 
                 conn.execute(
@@ -79,7 +81,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (thread_id) REFERENCES chat_threads (id)
                     )
-                """
+                    """
                 )
                 conn.commit()
             else:
@@ -90,9 +92,11 @@ class SQLiteStorageBackend(ChatStorageBackend):
                         CREATE TABLE IF NOT EXISTS chat_threads (
                             id TEXT PRIMARY KEY,
                             user_id TEXT NOT NULL,
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            custom_state TEXT DEFAULT '{}'::text
                         )
-                    """
+                        """
                     )
 
                     conn.execute(
@@ -108,7 +112,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             FOREIGN KEY (thread_id) REFERENCES chat_threads (id)
                         )
-                    """
+                        """
                     )
                     conn.commit()
 
@@ -241,7 +245,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
                             UPDATE chat_threads
                             SET metadata = ?
                             WHERE id = ?
-                        """,
+                            """,
                             (json.dumps(custom_state), thread_id),
                         )
                         logger.debug(
@@ -304,7 +308,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
                                 INSERT OR REPLACE INTO chat_messages
                                 (id, user_id, thread_id, content, role, metadata, usage_metadata)
                                 VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """,
+                                """,
                                 (
                                     msg.id,
                                     user_id,
