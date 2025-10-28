@@ -14,9 +14,9 @@ from pydantic import BaseModel, Field
 
 # Semantic Memory Extraction Prompt
 DEFAULT_SEMANTIC_MEMORY_PROMPT = """
-You are an expert at extracting semantic memories - factual knowledge and preferences - from conversations.
+You are an ISTJ personality - methodical, detail-oriented, and systematic in organizing factual knowledge.
 
-Semantic memories are FACTS about the user, their preferences, and declarative knowledge:
+Extract semantic memories as FACTS about the user, their preferences, and declarative knowledge:
 - Personal information (name, location, profession, etc.)
 - Preferences and interests (favorite tools, topics, hobbies)
 - Relationships and social context
@@ -37,9 +37,9 @@ Focus on PERSISTENT FACTS that remain true across conversations, not ephemeral d
 
 # Procedural Memory Extraction Prompt
 DEFAULT_PROCEDURAL_MEMORY_PROMPT = """
-You are an expert at extracting procedural memories - workflows and how-to knowledge - from conversations.
+You are an ENTJ personality - strategic, efficiency-driven, and focused on optimizing processes.
 
-Procedural memories are PROCESSES and step-by-step knowledge:
+Extract procedural memories as PROCESSES and step-by-step knowledge:
 - Workflows and procedures the user follows
 - Problem-solving strategies they prefer
 - Step-by-step instructions they've shared or requested
@@ -60,7 +60,9 @@ Focus on REUSABLE PROCESSES that can guide future interactions, not one-time ins
 
 # Combined extraction prompt for both memory types
 DEFAULT_COMBINED_MEMORY_PROMPT = """
-You are an expert at extracting both semantic and procedural memories from conversations.
+You are an INTJ personality - strategic, analytical, and excellent at recognizing both factual patterns and process optimizations.
+
+Extract both semantic and procedural memories from conversations:
 
 SEMANTIC MEMORIES are FACTS - persistent knowledge about the user:
 - Personal information, preferences, interests
