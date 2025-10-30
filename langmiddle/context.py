@@ -17,15 +17,15 @@ across multiple conversation sessions.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any, cast
+from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.chat_models import BaseChatModel, init_chat_model
 from langchain_core.messages import (
     AnyMessage,
     MessageLikeRepresentation,
-    SystemMessage,
 )
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.runtime import Runtime
 from pydantic import BaseModel
@@ -33,13 +33,14 @@ from pydantic import BaseModel
 from langmiddle.utils.logging import get_graph_logger
 from langmiddle.utils.messages import filter_tool_messages
 
+from .memory.facts_prompts import DEFAULT_FACTS_EXTRACTOR, DEFAULT_FACTS_UPDATER
+from .memory.facts_models import Facts, UpdatedFacts
+
 TokenCounter = Callable[[Iterable[MessageLikeRepresentation]], int]
 
 logger = get_graph_logger(__name__)
 # Disable propagation to avoid duplicate logs
 logger._logger.propagate = False
-
-BACKENDS = {}
 
 
 class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
@@ -60,9 +61,13 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
 
     Attributes:
         model: The LLM model for context analysis and memory extraction.
+        backend: Database backend to use. Currently only supports "supabase".
+        extraction_prompt: System prompt guiding the facts extraction process.
+        extraction_model: Model class for facts extraction.
+        update_prompt: Custom prompt string guiding facts updating.
+        update_model: Custom model class for facts updating.
         max_tokens_before_extraction: Token threshold to trigger extraction (None = every completion).
         token_counter: Function to count tokens in messages.
-        extraction_prompt: System prompt guiding the context extraction process.
 
     Note:
         Current implementation focuses on extraction and storage (Phase 1).
@@ -73,65 +78,74 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
     def __init__(
         self,
         model: str | BaseChatModel,
+        backend: str = "supabase",
+        *,
+        extraction_prompt: str | None = None,
+        extraction_model: type[BaseModel] | None = None,
+        update_prompt: str | None = None,
+        update_model: type[BaseModel] | None = None,
         max_tokens_before_extraction: int | None = None,
         token_counter: TokenCounter = count_tokens_approximately,
-        backend: str = "store",
-        extraction_prompt: str | None = None,
-        namespace_prefix: list[str] | None = None,
     ) -> None:
         """Initialize the context engineer.
 
         Args:
             model: LLM model for context analysis and memory extraction.
+            backend: Database backend to use. Currently only supports "supabase".
+            extraction_prompt: Custom prompt string guiding facts extraction.
+            extraction_model: Custom model class for facts extraction.
+            update_prompt: Custom prompt string guiding facts updating.
+            update_model: Custom model class for facts updating.
             max_tokens_before_extraction: Token threshold to trigger extraction.
                 If None, extraction runs on every agent completion.
             token_counter: Function to count tokens in messages.
-            extraction_prompt: Custom prompt string guiding context extraction.
         """
         super().__init__()
 
-        if isinstance(model, str):
-            try:
-                model = init_chat_model(model)
-            except Exception as e:
-                logger.error(f"Error initializing chat model '{model}': {e}. ")
-
-        self.model = model
         self.max_tokens_before_extraction = max_tokens_before_extraction
         self.token_counter = token_counter
-        self.memory_model: type[BaseModel] | None = None
-        self._llm = None
 
         # Ensure valid backend and model configuration
-        if backend not in BACKENDS or "model" not in BACKENDS[backend]:
+        if backend != "supabase":
             logger.warning(
-                f"Invalid backend: {backend}. Available choices: {list(BACKENDS.keys())}. "
-                f"Using default backend 'store'."
+                f"Invalid backend: {backend}. Using default backend 'supabase'."
             )
-            backend = "store"
+            backend = "supabase"
 
         self.backend = backend
+
         if extraction_prompt:
             self.extraction_prompt = extraction_prompt
         else:
-            self.extraction_prompt = BACKENDS[backend].get("prompt")
-        try:
-            self.memory_model = cast(type[BaseModel], BACKENDS[backend].get("model"))
-        except Exception as e:
-            logger.error(f"Error casting memory model for backend {backend}: {e}")
+            self.extraction_prompt = DEFAULT_FACTS_EXTRACTOR
 
-        self.namespace_prefix = namespace_prefix or ["memories"]
-
-        if isinstance(self.model, BaseChatModel) and self.memory_model:
-            # Create structured output model - store as Any to avoid type issues
-            self._llm: Any = self.model.with_structured_output(self.memory_model)
-
-        if self._llm is not None:
-            logger.info(
-                f"Initialized middleware {self.name} with model: {self.model.__class__.__name__}, backend: {self.backend}."
-            )
+        if extraction_model is not None:
+            self.facts_model = extraction_model
         else:
-            logger.error(f"Initiation failed - the middleware {self.name} will be skipped during execution.")
+            self.facts_model = Facts
+
+        if update_prompt:
+            self.update_prompt = update_prompt
+        else:
+            self.update_prompt = DEFAULT_FACTS_UPDATER
+
+        if update_model is not None:
+            self.update_model = update_model
+        else:
+            self.update_model = UpdatedFacts
+
+        if isinstance(model, str):
+            try:
+                model = init_chat_model(model, temperature=0.1)
+            except Exception as e:
+                logger.error(f"Error initializing chat model '{model}': {e}.")
+                logger.error(f"Initiation failed - the middleware {self.name} will be skipped during execution.")
+                return
+
+        self.model: BaseChatModel = model
+        logger.info(
+            f"Initialized middleware {self.name} with model: {self.model.__class__.__name__} / backend: {self.backend}."
+        )
 
     def _should_extract(self, messages: list[AnyMessage]) -> bool:
         """Determine if extraction should be triggered based on token count.
@@ -152,48 +166,45 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
         total_tokens = self.token_counter(messages)
         return total_tokens >= self.max_tokens_before_extraction
 
-    def _extract_memories(self, messages: list[AnyMessage]) -> list[dict] | None:
-        """Extract memories from messages using the LLM.
+    def _extract_facts(self, messages: list[AnyMessage]) -> list[dict] | None:
+        """Extract facts from messages using the LLM.
 
         Filters out tool messages, then invokes the LLM with the extraction prompt
         as a SystemMessage followed by the conversation messages. The LLM returns
-        structured output in MemoriesExtraction format.
+        structured output in given format - default `Facts`.
 
         Args:
             messages: List of conversation messages.
 
         Returns:
-            Structured output containing extracted memories.
+            Structured output containing extracted facts.
         """
         try:
-            if self._llm is None or self.memory_model is None:
-                logger.error("LLM or memory model not properly initialized for extraction.")
-                return None
-
-            if self._should_extract(messages) is False:
-                logger.debug("Token threshold not met, skipping extraction")
-                return None
-
             # Filter non-tool messages
             filtered_messages = filter_tool_messages(messages)
             if not filtered_messages:
                 logger.debug("No non-tool messages found, skipping extraction")
                 return None
 
-            # Invoke model - result should be `self.memory_model`
-            result: Any = self._llm.invoke(
-                [SystemMessage(content=self.extraction_prompt)] + filtered_messages
-            )
-
-            # Type guard: ensure result is
-            if not isinstance(result, self.memory_model):
-                logger.warning(f"Unexpected result type: {type(result)}, expected {self.memory_model}")
+            if self._should_extract(filtered_messages) is False:
+                logger.debug("Token threshold not met, skipping extraction")
                 return None
 
-            res = getattr(result, "memories", [])
-            logger.info(f"Extracted {len(res)} memories from conversation")
+            # Invoke model - result should be `self.facts_model`
+            result: Any = (
+                ChatPromptTemplate.from_template(self.extraction_prompt)
+                | self.model.with_structured_output(self.facts_model)
+            ).invoke({'messages': filtered_messages})
+
+            # Type guard: ensure result is
+            if not isinstance(result, self.facts_model):
+                logger.warning(f"Unexpected result type: {type(result)}, expected {self.facts_model}")
+                return None
+
+            res = getattr(result, "facts", [])
+            logger.info(f"Extracted {len(res)} facts from conversation")
             return res
 
         except Exception as e:
-            logger.error(f"Error extracting memories: {e}")
+            logger.error(f"Error extracting facts: {e}")
             return None

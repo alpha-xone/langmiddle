@@ -33,27 +33,9 @@ class Facts(BaseModel):
     facts: List[Fact] = Field(..., description="List of facts extracted from the messages.")
 
 
-class FactItem(BaseModel):
+class FactItem(Fact):
     """Model to represent a fact update."""
     id: str = Field(..., description="The ID of the fact being updated.")
-    content: str = Field(..., description="The updated content of the fact.")
-    namespace: list[str] = Field(
-        ...,
-        description="Hierarchical path for organizing the fact (e.g., ['user', 'profile'])",
-    )
-    intensity: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Intensity of the fact, 1.0 is strong, 0.5 is moderate, 0.0 is weak.",
-    )
-    confidence: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Confidence level of the fact, 1.0 is explicit, 0.8 is implied, ≤0.5 is tentative.",
-    )
-    language: str = Field(..., description="Language of the fact.")
     event: Literal["ADD", "UPDATE", "DELETE", "NONE"]
 
 
