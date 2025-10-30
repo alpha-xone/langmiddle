@@ -37,6 +37,10 @@ class FactItem(BaseModel):
     """Model to represent a fact update."""
     id: str = Field(..., description="The ID of the fact being updated.")
     content: str = Field(..., description="The updated content of the fact.")
+    namespace: list[str] = Field(
+        ...,
+        description="Hierarchical path for organizing the fact (e.g., ['user', 'profile'])",
+    )
     intensity: float = Field(
         ...,
         ge=0.0,
