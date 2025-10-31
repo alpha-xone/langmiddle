@@ -106,7 +106,7 @@ class ToolRemover(AgentMiddleware[AgentState, Runtime]):
             raise ValueError(
                 f"Invalid 'when' value: {when}. Must be 'before', 'after', or 'both'"
             )
-        self.when = when
+        self.when: str = when
 
     def _filter_tool_messages(
         self,
@@ -123,11 +123,11 @@ class ToolRemover(AgentMiddleware[AgentState, Runtime]):
         Returns:
             Updated state dict with RemoveMessage instances or None if no filtering occurred
         """
-        messages: list[AnyMessage] = state.get("messages", [])
-        new_messages: list[AnyMessage] = filter_tool_messages(messages)
+        messages: list[Any] = state.get("messages", [])
+        new_messages: list[Any] = filter_tool_messages(messages)
 
         # Only return update if we have messages to remove
-        cnt_diff = len(messages) - len(new_messages)
+        cnt_diff: int = len(messages) - len(new_messages)
         if cnt_diff > 0:
             logger.debug(f"[{stage}] Marked {cnt_diff} tool-related messages for removal")
             return {
@@ -291,8 +291,8 @@ class ChatSaver(AgentMiddleware[AgentState, Runtime]):
             msg = f"save_interval must be >= 1, got {save_interval}"
             raise ValueError(msg)
 
-        self.save_interval = save_interval
-        self._model_call_count = 0
+        self.save_interval: int = save_interval
+        self._model_call_count: int = 0
         self._saved_msg_ids: set[str] = set()  # Persistent tracking of saved message IDs
         self._logged_messages: set[str] = set()  # Track logged messages to avoid duplicates
 
@@ -333,13 +333,13 @@ class ChatSaver(AgentMiddleware[AgentState, Runtime]):
             return None
 
         # Extract context information from runtime
-        user_id = getattr(runtime.context, "user_id", None)
-        thread_id = getattr(runtime.context, "thread_id", None)
-        auth_token = getattr(runtime.context, "auth_token", None)
+        user_id: str | None = getattr(runtime.context, "user_id", None)
+        thread_id: str | None = getattr(runtime.context, "thread_id", None)
+        auth_token: str | None = getattr(runtime.context, "auth_token", None)
 
         # Validate required context
         if not thread_id:
-            log_msg = "[after_agent] Missing thread_id in context; cannot save chat history"
+            log_msg: str = "[after_agent] Missing thread_id in context; cannot save chat history"
             if log_msg not in self._logged_messages:
                 graph_logs = [logger.error(log_msg)]
                 self._logged_messages.add(log_msg)
@@ -351,7 +351,7 @@ class ChatSaver(AgentMiddleware[AgentState, Runtime]):
 
         if not messages:
             if logger.isEnabledFor(logging.DEBUG):
-                log_msg = f"[after_agent] No messages to save for thread {thread_id}"
+                log_msg: str = f"[after_agent] No messages to save for thread {thread_id}"
                 if log_msg not in self._logged_messages:
                     self._logged_messages.add(log_msg)
                     return {"logs": [logger.debug(log_msg)]}
@@ -365,7 +365,7 @@ class ChatSaver(AgentMiddleware[AgentState, Runtime]):
                 custom_state[key] = value
 
         # Prepare credentials based on available context
-        credentials = self._prepare_credentials(user_id, auth_token)
+        credentials: dict[str, Any] = self._prepare_credentials(user_id, auth_token)
 
         # Save chat history using the storage backend
         result = self.storage.save_chat_history(
@@ -402,7 +402,7 @@ class ChatSaver(AgentMiddleware[AgentState, Runtime]):
 
         if auth_token:
             # Add token with appropriate key based on backend type
-            backend_type = type(self.storage.backend).__name__.lower()
+            backend_type: str = type(self.storage.backend).__name__.lower()
             if "firebase" in backend_type:
                 credentials["id_token"] = auth_token
             else:  # Supabase or other JWT-based backends
@@ -428,7 +428,7 @@ class ChatSaver(AgentMiddleware[AgentState, Runtime]):
 
         if result["success"]:
             if result["saved_count"] > 0:
-                log_msg = (
+                log_msg: str = (
                     f"[after_agent] Saved {result['saved_count']} messages for thread {thread_id} "
                     f"(skipped {result.get('skipped_count', 0)} already saved)"
                 )
@@ -438,7 +438,7 @@ class ChatSaver(AgentMiddleware[AgentState, Runtime]):
         else:
             # Only log each unique error once per session
             for error in result["errors"]:
-                log_msg = f"[after_agent] Chat history save error: {error}"
+                log_msg: str = f"[after_agent] Chat history save error: {error}"
                 if log_msg not in self._logged_messages:
                     graph_logs.append(logger.error(log_msg))
                     self._logged_messages.add(log_msg)

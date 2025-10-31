@@ -6,7 +6,45 @@ different middleware components.
 
 from __future__ import annotations
 
+from typing import Any
+
+from langchain.embeddings import Embeddings, init_embeddings
 from langchain_core.messages import AnyMessage
+
+from ..utils.logging import get_graph_logger
+
+logger = get_graph_logger(__name__)
+
+
+def embed_messages(
+    embedder: Embeddings | str,
+    contents: list[str],
+    **kwargs: Any,
+) -> list[list[float]] | None:
+    """Embed a list of messages using the provided embedder.
+
+    Args:
+        embedder: An instance of Embeddings to use for embedding.
+        messages: List of messages (either AnyMessage or dicts) to embed.
+
+    Returns:
+        List of embedding vectors, or None if embedding fails.
+    """
+    if isinstance(embedder, str):
+        embedder = init_embeddings(embedder, **kwargs)
+
+    if not isinstance(embedder, Embeddings):
+        logger.error("Embedder is not an Embeddings instance")
+        return None
+
+    try:
+        vectors = embedder.embed_documents(contents)
+        return vectors
+    except Exception:
+        logger.error(
+            f"Embedding failed for messages: {[content[:30] + '...' for content in contents[:5]]} ..."
+        )
+        return None
 
 
 def is_tool_message(msg: AnyMessage | dict) -> bool:
@@ -82,11 +120,11 @@ def is_tool_message(msg: AnyMessage | dict) -> bool:
     return False
 
 
-def filter_tool_messages(messages: list[AnyMessage]) -> list[AnyMessage]:
+def filter_tool_messages(messages: list[AnyMessage | dict]) -> list[AnyMessage | dict]:
     """Filter out tool messages from a message list.
 
     Args:
-        messages: List of messages to filter.
+        messages: List of messages (either AnyMessage or dicts) to filter.
 
     Returns:
         List of messages excluding tool-related messages.
