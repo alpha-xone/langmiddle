@@ -155,3 +155,129 @@ class ChatStorageBackend(ABC):
             None
         """
         raise NotImplementedError("`delete_thread` not implemented")
+
+    # =========================================================================
+    # Facts Management Methods
+    # =========================================================================
+
+    @abstractmethod
+    def insert_facts(
+        self,
+        user_id: str,
+        facts: List[Dict[str, Any]],
+        embeddings: Optional[List[List[float]]] = None,
+        model_dimension: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Insert facts with optional embeddings into storage.
+
+        Args:
+            user_id: User identifier
+            facts: List of fact dictionaries with keys: content, namespace, language, intensity, confidence
+            embeddings: Optional list of embedding vectors (must match length of facts)
+            model_dimension: Dimension of the embedding vectors (required if embeddings provided)
+
+        Returns:
+            Dict with 'inserted_count', 'fact_ids', and 'errors' keys
+        """
+        raise NotImplementedError("`insert_facts` not implemented")
+
+    @abstractmethod
+    def query_facts(
+        self,
+        query_embedding: List[float],
+        user_id: str,
+        model_dimension: int,
+        match_threshold: float = 0.75,
+        match_count: int = 10,
+        filter_namespaces: Optional[List[List[str]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Query facts using vector similarity search.
+
+        Args:
+            query_embedding: Query vector for similarity search
+            user_id: User identifier for filtering
+            model_dimension: Dimension of the embedding model
+            match_threshold: Minimum similarity threshold (0-1, default: 0.75)
+            match_count: Maximum number of results to return
+            filter_namespaces: Optional list of namespace paths to filter by
+
+        Returns:
+            List of fact dictionaries with similarity scores
+        """
+        raise NotImplementedError("`query_facts` not implemented")
+
+    @abstractmethod
+    def get_fact_by_id(
+        self,
+        fact_id: str,
+        user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get a fact by its ID.
+
+        Args:
+            fact_id: Fact identifier
+            user_id: User identifier for authorization
+
+        Returns:
+            Fact dictionary if found, None otherwise
+        """
+        raise NotImplementedError("`get_fact_by_id` not implemented")
+
+    @abstractmethod
+    def update_fact(
+        self,
+        fact_id: str,
+        user_id: str,
+        updates: Dict[str, Any],
+        embedding: Optional[List[float]] = None,
+    ) -> bool:
+        """
+        Update a fact's content and/or metadata.
+
+        Args:
+            fact_id: Fact identifier
+            user_id: User identifier for authorization
+            updates: Dictionary of fields to update (content, namespace, intensity, confidence, etc.)
+            embedding: Optional new embedding vector
+
+        Returns:
+            True if update successful, False otherwise
+        """
+        raise NotImplementedError("`update_fact` not implemented")
+
+    @abstractmethod
+    def delete_fact(
+        self,
+        fact_id: str,
+        user_id: str,
+    ) -> bool:
+        """
+        Delete a fact and its embeddings.
+
+        Args:
+            fact_id: Fact identifier
+            user_id: User identifier for authorization
+
+        Returns:
+            True if deletion successful, False otherwise
+        """
+        raise NotImplementedError("`delete_fact` not implemented")
+
+    @abstractmethod
+    def get_or_create_embedding_table(
+        self,
+        dimension: int,
+    ) -> bool:
+        """
+        Ensure an embedding table exists for the given dimension.
+
+        Args:
+            dimension: Embedding vector dimension
+
+        Returns:
+            True if table exists or was created, False otherwise
+        """
+        raise NotImplementedError("`get_or_create_embedding_table` not implemented")

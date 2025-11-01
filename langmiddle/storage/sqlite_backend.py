@@ -586,3 +586,77 @@ class SQLiteStorageBackend(ChatStorageBackend):
                 logger.info(f"Deleted thread {thread_id} and all its messages")
             except Exception as e:
                 logger.error(f"Error deleting thread {thread_id}: {e}")
+
+    # =========================================================================
+    # Facts Management Methods - Not supported in SQLite backend
+    # =========================================================================
+
+    def get_or_create_embedding_table(self, dimension: int) -> bool:
+        """Ensure an embedding table exists for the given dimension."""
+        raise NotImplementedError(
+            "Facts management not supported in SQLite backend. "
+            "Use SupabaseStorageBackend for vector similarity search and facts support."
+        )
+
+    def insert_facts(
+        self,
+        user_id: str,
+        facts: List[Dict[str, Any]],
+        embeddings: Optional[List[List[float]]] = None,
+        model_dimension: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Insert facts with optional embeddings into storage."""
+        raise NotImplementedError(
+            "Facts management not supported in SQLite backend. "
+            "Use SupabaseStorageBackend for vector similarity search and facts support."
+        )
+
+    def query_facts(
+        self,
+        query_embedding: List[float],
+        user_id: str,
+        model_dimension: int,
+        match_threshold: float = 0.75,
+        match_count: int = 10,
+        filter_namespaces: Optional[List[List[str]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Query facts using vector similarity search."""
+        raise NotImplementedError(
+            "Facts management not supported in SQLite backend. "
+            "Use SupabaseStorageBackend for vector similarity search and facts support."
+        )
+
+    def get_fact_by_id(
+        self,
+        fact_id: str,
+        user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Get a fact by its ID."""
+        raise NotImplementedError(
+            "Facts management not supported in SQLite backend. "
+            "Use SupabaseStorageBackend for vector similarity search and facts support."
+        )
+
+    def update_fact(
+        self,
+        fact_id: str,
+        user_id: str,
+        updates: Dict[str, Any],
+        embedding: Optional[List[float]] = None,
+    ) -> bool:
+        """Update a fact's content and/or metadata."""
+        raise NotImplementedError(
+            "Facts management not supported in SQLite backend. "
+            "Use SupabaseStorageBackend for vector similarity search and facts support."
+        )
+
+    def delete_fact(
+        self,
+        fact_id: str,
+        user_id: str,
+    ) -> bool:
+        """Delete a fact and its embeddings."""
+        raise NotImplementedError(
+            "Facts management not supported in SQLite backend. "
+            "Use SupabaseStorageBackend for vector similarity search and facts support."
+        )

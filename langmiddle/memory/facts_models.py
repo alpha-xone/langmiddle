@@ -51,6 +51,6 @@ class ActionItem(CurrentItem):
     )
 
 
-class FactsUpdates(BaseModel):
+class FactsActions(BaseModel):
     """Model to represent a list of facts updates."""
     actions: List[ActionItem] = Field(..., description="List of facts updates.")

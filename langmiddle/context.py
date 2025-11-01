@@ -16,7 +16,7 @@ across multiple conversation sessions.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, AgentState
@@ -29,7 +29,15 @@ from langchain_core.messages import (
 from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.runtime import Runtime
 
+from langmiddle.memory.facts_manager import (
+    apply_fact_actions,
+    extract_facts,
+    get_actions,
+    query_existing_facts,
+)
+
 from .memory.facts_prompts import DEFAULT_FACTS_EXTRACTOR, DEFAULT_FACTS_UPDATER
+from .storage import ChatStorage
 from .utils.logging import get_graph_logger
 
 TokenCounter = Callable[[Iterable[MessageLikeRepresentation]], int]
@@ -116,6 +124,10 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
 
         self.model: BaseChatModel | None = None
         self.embedder: Embeddings | None = None
+        self.storage: Any = None
+        self._extraction_count: int = 0
+        self._logged_messages: set[str] = set()  # Track logged messages to avoid duplicates
+        self.embeddings_cache: dict[str, list[float]] = {}  # Cache for reusing embeddings
 
         # Initialize LLM model
         if isinstance(model, str):
@@ -145,6 +157,16 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
         if isinstance(embedder, Embeddings):
             self.embedder = embedder
 
+        # Initialize storage backend
+        if self.model is not None and self.embedder is not None:
+            try:
+                # For now, we don't pass credentials here - they'll be provided per-request
+                self.storage = ChatStorage.create(backend)
+                logger.debug(f"Initialized storage backend: {backend}")
+            except Exception as e:
+                logger.error(f"Failed to initialize storage backend '{backend}': {e}")
+                self.storage = None
+
         if self.model is None or self.embedder is None:
             logger.error(f"Initiation failed - the middleware {self.name} will be skipped during execution.")
         else:
@@ -152,6 +174,22 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
                 f"Initialized middleware {self.name} with model {self.model.__class__.__name__} / "
                 f"embedder: {self.embedder.__class__.__name__} / backend: {self.backend}."
             )
+
+    def clear_embeddings_cache(self) -> None:
+        """Clear the embeddings cache to free memory."""
+        self.embeddings_cache.clear()
+        logger.info("Embeddings cache cleared")
+
+    def get_cache_stats(self) -> dict[str, Any]:
+        """Get statistics about the embeddings cache.
+
+        Returns:
+            Dictionary with cache statistics including size and sample keys
+        """
+        return {
+            "size": len(self.embeddings_cache),
+            "sample_keys": list(self.embeddings_cache.keys())[:5] if self.embeddings_cache else [],
+        }
 
     def _should_extract(self, messages: list[AnyMessage]) -> bool:
         """Determine if extraction should be triggered based on token count.
@@ -171,3 +209,264 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
 
         total_tokens: int = self.token_counter(messages)
         return total_tokens >= self.max_tokens_before_extraction
+
+    def _extract_facts(self, messages: Sequence[AnyMessage | dict]) -> list[dict] | None:
+        """Extract facts from conversation messages.
+
+        Args:
+            messages: Sequence of conversation messages.
+
+        Returns:
+            List of extracted facts as dictionaries, or None on failure.
+        """
+        if self.model is None:
+            logger.error("Model not initialized for fact extraction.")
+            return None
+
+        extracted = extract_facts(
+            model=self.model,
+            extraction_prompt=self.extraction_prompt,
+            messages=messages,
+        )
+        if extracted is None:
+            logger.error("Fact extraction failed.")
+            return None
+
+        return [fact.model_dump() for fact in extracted.facts]
+
+    def _query_existing_facts(
+        self,
+        new_facts: list[dict],
+        user_id: str,
+    ) -> list[dict]:
+        """Query existing facts from storage using embeddings and namespace filtering.
+
+        This is a wrapper around the standalone query_existing_facts function.
+
+        Args:
+            new_facts: List of newly extracted facts
+            user_id: User identifier
+
+        Returns:
+            List of existing relevant facts from storage
+        """
+        if self.storage is None or self.embedder is None:
+            return []
+
+        return query_existing_facts(
+            storage_backend=self.storage.backend,
+            embedder=self.embedder,
+            user_id=user_id,
+            new_facts=new_facts,
+            embeddings_cache=self.embeddings_cache,
+        )
+
+    def _determine_actions(
+        self,
+        new_facts: list[dict],
+        existing_facts: list[dict],
+    ) -> list[dict] | None:
+        """Determine what actions to take on facts (ADD, UPDATE, DELETE, NONE).
+
+        Args:
+            new_facts: List of newly extracted facts
+            existing_facts: List of existing facts from storage
+
+        Returns:
+            List of actions to take, or None on failure
+        """
+        if self.model is None:
+            logger.error("Model not initialized for action determination.")
+            return None
+
+        try:
+            actions = get_actions(
+                model=self.model,
+                update_prompt=self.update_prompt,
+                current_facts=existing_facts,
+                new_facts=new_facts,
+            )
+
+            if actions is None:
+                logger.error("Failed to determine actions for facts")
+                return None
+
+            return [action.model_dump() for action in actions.actions]
+
+        except Exception as e:
+            logger.error(f"Error determining facts actions: {e}")
+            return None
+
+    def _apply_actions(
+        self,
+        actions: list[dict],
+        user_id: str,
+    ) -> dict[str, Any]:
+        """Apply fact actions to storage.
+
+        This is a wrapper around the standalone apply_fact_actions function.
+
+        Args:
+            actions: List of action dictionaries from get_actions
+            user_id: User identifier
+
+        Returns:
+            Dictionary with action statistics and results
+        """
+        if self.storage is None or self.embedder is None:
+            logger.error("Storage or embedder not initialized")
+            return {
+                "added": 0,
+                "updated": 0,
+                "deleted": 0,
+                "skipped": 0,
+                "errors": ["Storage not initialized"],
+            }
+
+        return apply_fact_actions(
+            storage_backend=self.storage.backend,
+            embedder=self.embedder,
+            user_id=user_id,
+            actions=actions,
+            embeddings_cache=self.embeddings_cache,
+        )
+
+    def after_agent(
+        self,
+        state: AgentState,
+        runtime: Runtime[Any],
+    ) -> dict[str, Any] | None:
+        """Extract and manage facts after agent execution completes.
+
+        This hook is called after each agent run, extracting facts from
+        the conversation and managing them in the storage backend.
+
+        Args:
+            state: Current agent state containing messages
+            runtime: Runtime context with user_id and auth_token
+
+        Returns:
+            Dict with collected logs or None if no extraction occurred
+        """
+        # Check if we should extract
+        messages: list[AnyMessage] = state.get("messages", [])
+
+        if not self._should_extract(messages):
+            return None
+
+        # Ensure storage is initialized
+        if self.storage is None or self.model is None or self.embedder is None:
+            log_msg = "[after_agent] Context engineer not fully initialized; skipping extraction"
+            if log_msg not in self._logged_messages:
+                self._logged_messages.add(log_msg)
+                return {"logs": [logger.warning(log_msg)]}
+            return None
+
+        # Extract context information
+        user_id: str | None = getattr(runtime.context, "user_id", None)
+        auth_token: str | None = getattr(runtime.context, "auth_token", None)
+
+        if not user_id:
+            log_msg = "[after_agent] Missing user_id in context; cannot extract facts"
+            if log_msg not in self._logged_messages:
+                self._logged_messages.add(log_msg)
+                return {"logs": [logger.error(log_msg)]}
+            return None
+
+        # Authenticate with storage backend
+        try:
+            credentials = {"user_id": user_id}
+            if auth_token:
+                credentials["jwt_token"] = auth_token
+
+            self.storage.backend.authenticate(credentials)
+        except Exception as e:
+            logger.error(f"Authentication failed: {e}")
+
+        graph_logs = []
+        self._extraction_count += 1
+
+        try:
+            # Step 1: Extract facts from messages
+            log_msg = f"[after_agent] Extracting facts from {len(messages)} messages"
+            if log_msg not in self._logged_messages:
+                graph_logs.append(logger.info(log_msg))
+                self._logged_messages.add(log_msg)
+
+            new_facts = self._extract_facts(messages)
+
+            if not new_facts:
+                log_msg = "[after_agent] No facts extracted from conversation"
+                if log_msg not in self._logged_messages:
+                    graph_logs.append(logger.debug(log_msg))
+                    self._logged_messages.add(log_msg)
+                return {"logs": graph_logs} if graph_logs else None
+
+            log_msg = f"[after_agent] Extracted {len(new_facts)} facts"
+            if log_msg not in self._logged_messages:
+                graph_logs.append(logger.info(log_msg))
+                self._logged_messages.add(log_msg)
+
+            # Step 2: Query existing facts
+            existing_facts = self._query_existing_facts(new_facts, user_id)
+
+            if existing_facts:
+                log_msg = f"[after_agent] Found {len(existing_facts)} existing related facts"
+                if log_msg not in self._logged_messages:
+                    graph_logs.append(logger.debug(log_msg))
+                    self._logged_messages.add(log_msg)
+
+            # Step 3: Determine actions
+            actions = self._determine_actions(new_facts, existing_facts)
+
+            if not actions:
+                # If no actions determined, just insert new facts
+                contents = [f["content"] for f in new_facts]
+                embeddings = self.embedder.embed_documents(contents)
+                model_dimension = len(embeddings[0]) if embeddings else 1536
+
+                result = self.storage.backend.insert_facts(
+                    user_id=user_id,
+                    facts=new_facts,
+                    embeddings=embeddings,
+                    model_dimension=model_dimension,
+                )
+
+                if result.get("inserted_count", 0) > 0:
+                    log_msg = f"[after_agent] Inserted {result['inserted_count']} new facts"
+                    graph_logs.append(logger.info(log_msg))
+
+                if result.get("errors"):
+                    for error in result["errors"]:
+                        log_msg = f"[after_agent] Fact insertion error: {error}"
+                        if log_msg not in self._logged_messages:
+                            graph_logs.append(logger.error(log_msg))
+                            self._logged_messages.add(log_msg)
+            else:
+                # Step 4: Apply actions
+                stats = self._apply_actions(actions, user_id)
+
+                # Log statistics
+                if stats["added"] > 0 or stats["updated"] > 0 or stats["deleted"] > 0:
+                    log_msg = (
+                        f"[after_agent] Facts updated - "
+                        f"Added: {stats['added']}, "
+                        f"Updated: {stats['updated']}, "
+                        f"Deleted: {stats['deleted']}"
+                    )
+                    graph_logs.append(logger.info(log_msg))
+
+                # Log errors
+                for error in stats.get("errors", []):
+                    log_msg = f"[after_agent] Fact management error: {error}"
+                    if log_msg not in self._logged_messages:
+                        graph_logs.append(logger.error(log_msg))
+                        self._logged_messages.add(log_msg)
+
+        except Exception as e:
+            log_msg = f"[after_agent] Unexpected error during fact extraction: {e}"
+            if log_msg not in self._logged_messages:
+                graph_logs.append(logger.error(log_msg))
+                self._logged_messages.add(log_msg)
+
+        return {"logs": graph_logs} if graph_logs else None

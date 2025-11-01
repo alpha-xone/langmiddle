@@ -544,3 +544,318 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
 
         except Exception as e:
             logger.error(f"Error retrieving threads: {e}")
+
+    # =========================================================================
+    # Facts Management Methods
+    # =========================================================================
+
+    def get_or_create_embedding_table(
+        self,
+        dimension: int,
+    ) -> bool:
+        """
+        Ensure an embedding table exists for the given dimension.
+
+        Args:
+            dimension: Embedding vector dimension
+
+        Returns:
+            True if table exists or was created, False otherwise
+        """
+        try:
+            self.client.rpc(
+                "ensure_embedding_table",
+                {"p_dimension": dimension}
+            ).execute()
+
+            logger.debug(f"Embedding table for dimension {dimension} is ready")
+            return True
+        except Exception as e:
+            logger.error(f"Error creating/checking embedding table for dimension {dimension}: {e}")
+            return False
+
+    def insert_facts(
+        self,
+        user_id: str,
+        facts: List[Dict[str, Any]],
+        embeddings: Optional[List[List[float]]] = None,
+        model_dimension: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Insert facts with optional embeddings into storage.
+
+        Args:
+            user_id: User identifier
+            facts: List of fact dictionaries with keys: content, namespace, language, intensity, confidence
+            embeddings: Optional list of embedding vectors (must match length of facts)
+            model_dimension: Dimension of the embedding vectors (required if embeddings provided)
+
+        Returns:
+            Dict with 'inserted_count', 'fact_ids', and 'errors' keys
+        """
+        inserted_count = 0
+        fact_ids = []
+        errors = []
+
+        if not facts:
+            return {"inserted_count": 0, "fact_ids": [], "errors": ["No facts provided"]}
+
+        # Validate embeddings if provided
+        if embeddings:
+            if len(embeddings) != len(facts):
+                return {
+                    "inserted_count": 0,
+                    "fact_ids": [],
+                    "errors": [f"Embeddings count ({len(embeddings)}) must match facts count ({len(facts)})"]
+                }
+
+            if not model_dimension:
+                model_dimension = len(embeddings[0]) if embeddings else None
+
+            if model_dimension:
+                # Ensure embedding table exists
+                if not self.get_or_create_embedding_table(model_dimension):
+                    return {
+                        "inserted_count": 0,
+                        "fact_ids": [],
+                        "errors": [f"Failed to create/verify embedding table for dimension {model_dimension}"]
+                    }
+
+        # Insert facts
+        for idx, fact in enumerate(facts):
+            try:
+                # Prepare fact data
+                fact_data = {
+                    "user_id": user_id,
+                    "content": fact.get("content"),
+                    "namespace": fact.get("namespace", []),
+                    "language": fact.get("language", "en"),
+                    "intensity": fact.get("intensity"),
+                    "confidence": fact.get("confidence"),
+                    "model_dimension": model_dimension,
+                }
+
+                # Insert into facts table
+                result = self.client.table("facts").insert(fact_data).execute()
+
+                if not result.data:
+                    errors.append(f"Failed to insert fact at index {idx}: No data returned")
+                    continue
+
+                fact_id = result.data[0]["id"]
+                fact_ids.append(fact_id)
+                inserted_count += 1
+
+                # Insert embedding if provided
+                if embeddings and idx < len(embeddings):
+                    try:
+                        embedding_data = {
+                            "fact_id": fact_id,
+                            "embedding": embeddings[idx],
+                        }
+
+                        table_name = f"fact_embeddings_{model_dimension}"
+                        emb_result = self.client.table(table_name).insert(embedding_data).execute()
+
+                        if not emb_result.data:
+                            logger.warning(f"Failed to insert embedding for fact {fact_id}")
+                            errors.append(f"Inserted fact {fact_id} but failed to insert embedding")
+                    except Exception as e:
+                        logger.error(f"Error inserting embedding for fact {fact_id}: {e}")
+                        errors.append(f"Inserted fact {fact_id} but error inserting embedding: {str(e)}")
+
+            except Exception as e:
+                logger.error(f"Error inserting fact at index {idx}: {e}")
+                errors.append(f"Error inserting fact at index {idx}: {str(e)}")
+
+        logger.info(f"Inserted {inserted_count} facts with {len(errors)} errors")
+        return {
+            "inserted_count": inserted_count,
+            "fact_ids": fact_ids,
+            "errors": errors
+        }
+
+    def query_facts(
+        self,
+        query_embedding: List[float],
+        user_id: str,
+        model_dimension: int,
+        match_threshold: float = 0.75,
+        match_count: int = 10,
+        filter_namespaces: Optional[List[List[str]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Query facts using vector similarity search.
+
+        Args:
+            query_embedding: Query vector for similarity search
+            user_id: User identifier for filtering
+            model_dimension: Dimension of the embedding model
+            match_threshold: Minimum similarity threshold (0-1)
+            match_count: Maximum number of results to return
+            filter_namespaces: Optional list of namespace paths to filter by
+
+        Returns:
+            List of fact dictionaries with similarity scores
+        """
+        try:
+            # Prepare parameters for RPC call
+            params = {
+                "p_embedding": query_embedding,
+                "p_dimension": model_dimension,
+                "p_user_id": user_id,
+                "p_threshold": match_threshold,
+                "p_limit": match_count,
+                "p_namespaces": filter_namespaces if filter_namespaces else None,
+            }
+
+            # Call the search function
+            result = self.client.rpc("search_facts", params).execute()
+
+            if not result.data:
+                logger.debug(f"No facts found matching query with threshold {match_threshold}")
+                return []
+
+            logger.info(f"Found {len(result.data)} facts matching query")
+            return result.data
+
+        except Exception as e:
+            logger.error(f"Error querying facts: {e}")
+            return []
+
+    def get_fact_by_id(
+        self,
+        fact_id: str,
+        user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get a fact by its ID.
+
+        Args:
+            fact_id: Fact identifier
+            user_id: User identifier for authorization
+
+        Returns:
+            Fact dictionary if found, None otherwise
+        """
+        try:
+            result = (
+                self.client.table("facts")
+                .select("*")
+                .eq("id", fact_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            if not result.data:
+                logger.debug(f"Fact {fact_id} not found for user {user_id}")
+                return None
+
+            return result.data[0]
+
+        except Exception as e:
+            logger.error(f"Error getting fact {fact_id}: {e}")
+            return None
+
+    def update_fact(
+        self,
+        fact_id: str,
+        user_id: str,
+        updates: Dict[str, Any],
+        embedding: Optional[List[float]] = None,
+    ) -> bool:
+        """
+        Update a fact's content and/or metadata.
+
+        Args:
+            fact_id: Fact identifier
+            user_id: User identifier for authorization
+            updates: Dictionary of fields to update (content, namespace, intensity, confidence, etc.)
+            embedding: Optional new embedding vector
+
+        Returns:
+            True if update successful, False otherwise
+        """
+        try:
+            # Update fact in facts table
+            updates["updated_at"] = "now()"
+            result = (
+                self.client.table("facts")
+                .update(updates)
+                .eq("id", fact_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            if not result.data:
+                logger.warning(f"Failed to update fact {fact_id} for user {user_id}")
+                return False
+
+            # Update embedding if provided
+            if embedding:
+                model_dimension = len(embedding)
+                table_name = f"fact_embeddings_{model_dimension}"
+
+                try:
+                    # Try to update existing embedding
+                    emb_result = (
+                        self.client.table(table_name)
+                        .update({"embedding": embedding})
+                        .eq("fact_id", fact_id)
+                        .execute()
+                    )
+
+                    # If no rows updated, insert new embedding
+                    if not emb_result.data:
+                        emb_result = (
+                            self.client.table(table_name)
+                            .insert({"fact_id": fact_id, "embedding": embedding})
+                            .execute()
+                        )
+
+                except Exception as e:
+                    logger.error(f"Error updating embedding for fact {fact_id}: {e}")
+                    return False
+
+            logger.info(f"Successfully updated fact {fact_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error updating fact {fact_id}: {e}")
+            return False
+
+    def delete_fact(
+        self,
+        fact_id: str,
+        user_id: str,
+    ) -> bool:
+        """
+        Delete a fact and its embeddings.
+
+        Args:
+            fact_id: Fact identifier
+            user_id: User identifier for authorization
+
+        Returns:
+            True if deletion successful, False otherwise
+        """
+        try:
+            # Delete fact (embeddings will be cascade deleted due to foreign key)
+            result = (
+                self.client.table("facts")
+                .delete()
+                .eq("id", fact_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            if not result.data:
+                logger.warning(f"Failed to delete fact {fact_id} for user {user_id}")
+                return False
+
+            logger.info(f"Successfully deleted fact {fact_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error deleting fact {fact_id}: {e}")
+            return False
