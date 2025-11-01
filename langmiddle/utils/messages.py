@@ -6,6 +6,7 @@ different middleware components.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from langchain.embeddings import Embeddings, init_embeddings
@@ -18,7 +19,7 @@ logger = get_graph_logger(__name__)
 
 def embed_messages(
     embedder: Embeddings | str,
-    contents: list[str],
+    contents: str | list[str],
     **kwargs: Any,
 ) -> list[list[float]] | None:
     """Embed a list of messages using the provided embedder.
@@ -38,6 +39,8 @@ def embed_messages(
         return None
 
     try:
+        if isinstance(contents, str):
+            contents = [contents]
         vectors = embedder.embed_documents(contents)
         return vectors
     except Exception:
@@ -120,7 +123,7 @@ def is_tool_message(msg: AnyMessage | dict) -> bool:
     return False
 
 
-def filter_tool_messages(messages: list[AnyMessage | dict]) -> list[AnyMessage | dict]:
+def filter_tool_messages(messages: Sequence[AnyMessage | dict]) -> list[AnyMessage | dict]:
     """Filter out tool messages from a message list.
 
     Args:
