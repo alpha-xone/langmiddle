@@ -4,7 +4,7 @@ Firebase Firestore storage backend implementation.
 This module provides Firebase Firestore-based implementation of the chat storage interface.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from langchain_core.messages import AnyMessage
 
@@ -416,7 +416,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
     def insert_facts(
         self,
         user_id: str,
-        facts: List[Dict[str, Any]],
+        facts: Sequence[Dict[str, Any] | str],
         embeddings: Optional[List[List[float]]] = None,
         model_dimension: Optional[int] = None,
     ) -> Dict[str, Any]:

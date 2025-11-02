@@ -6,7 +6,7 @@ to ensure consistency across different database systems.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Sequence
 
 from langchain_core.messages import AnyMessage
 
@@ -164,7 +164,7 @@ class ChatStorageBackend(ABC):
     def insert_facts(
         self,
         user_id: str,
-        facts: List[Dict[str, Any]],
+        facts: Sequence[Dict[str, Any] | str],
         embeddings: Optional[List[List[float]]] = None,
         model_dimension: Optional[int] = None,
     ) -> Dict[str, Any]:
@@ -173,7 +173,9 @@ class ChatStorageBackend(ABC):
 
         Args:
             user_id: User identifier
-            facts: List of fact dictionaries with keys: content, namespace, language, intensity, confidence
+            facts: List of facts. Each fact can be either:
+                - A string (auto-converted to fact dictionary)
+                - A dictionary with keys: content, namespace, language, intensity, confidence
             embeddings: Optional list of embedding vectors (must match length of facts)
             model_dimension: Dimension of the embedding vectors (required if embeddings provided)
 

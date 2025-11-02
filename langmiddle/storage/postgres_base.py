@@ -7,7 +7,7 @@ between Supabase (which is PostgreSQL-based) and direct PostgreSQL backends.
 
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from langchain_core.messages import AnyMessage
 
@@ -33,7 +33,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
         Create PostgreSQL tables from SQL files if they don't exist.
 
         This method reads the SQL schema files and executes them to create the necessary tables.
-        It's designed to be idempotent - safe to run multiple times.
+        It's designed to be idempotent - safe to run multiple times with detailed logging.
 
         Args:
             connection_string: PostgreSQL connection string for direct database access
@@ -47,6 +47,8 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
         Note:
             - For PostgreSQL backend: uses generic SQL without authentication dependencies
             - For Supabase backend: uses Supabase-specific auth.users and RLS policies
+            - All SQL scripts use IF NOT EXISTS/IF EXISTS checks for idempotency
+            - Detailed logging reports on each table, index, trigger, function, and policy
         """
         try:
             import psycopg2
@@ -61,64 +63,20 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
                 logger.error(f"SQL directory not found: {sql_dir}")
                 raise FileNotFoundError(f"SQL schema files not found at {sql_dir}")
 
+            logger.info(f"Starting table creation from SQL directory: {sql_dir}")
+
             # Connect to database
             conn = psycopg2.connect(connection_string)
             conn.autocommit = True
             cursor = conn.cursor()
 
-            # Check if tables already exist
-            cursor.execute(
-                """
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_schema = 'public'
-                    AND table_name = 'chat_threads'
-                );
-            """
-            )
-            result = cursor.fetchone()
-            threads_exists = result[0] if result else False
-
-            cursor.execute(
-                """
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_schema = 'public'
-                    AND table_name = 'chat_messages'
-                );
-            """
-            )
-            result = cursor.fetchone()
-            messages_exists = result[0] if result else False
-
-            if threads_exists and messages_exists:
-                logger.info("PostgreSQL tables already exist, skipping creation")
-                cursor.close()
-                conn.close()
-                return
-
-            logger.info("Creating PostgreSQL tables from SQL schema files...")
-
-            # Create trigger function first (required by chat_threads)
-            cursor.execute(
-                """
-                CREATE OR REPLACE FUNCTION update_updated_at_column()
-                RETURNS TRIGGER AS $$
-                BEGIN
-                    NEW.updated_at = timezone('utc'::text, now());
-                    RETURN NEW;
-                END;
-                $$ language 'plpgsql';
-            """
-            )
-            logger.debug("Created update_updated_at_column trigger function")
-
-            # Execute SQL files in order (threads first, then messages due to foreign key)
-            sql_files = ["chat_threads.sql", "chat_messages.sql"]
+            # Execute SQL files - let SQL handle idempotency with IF NOT EXISTS
+            sql_files = ["chat_history.sql"]
 
             # Add facts-related SQL file if enabled (includes processed_messages table)
             if enable_facts:
                 sql_files.append("chat_facts.sql")
+                logger.info("Facts tables enabled - will create chat_facts.sql schema")
 
             for sql_file in sql_files:
                 sql_path = sql_dir / sql_file
@@ -126,16 +84,57 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
                     logger.warning(f"SQL file not found: {sql_path}, skipping")
                     continue
 
+                logger.info(f"Executing SQL file: {sql_file}")
+
                 with open(sql_path, "r", encoding="utf-8") as f:
                     sql_content = f.read()
 
-                cursor.execute(sql_content)
-                logger.info(f"Successfully executed {sql_file}")
+                # Split SQL into individual statements and execute with detailed logging
+                statements = self._split_sql_statements(sql_content)
+
+                for idx, statement in enumerate(statements, 1):
+                    statement = statement.strip()
+                    if not statement:
+                        continue
+
+                    stmt_name = ""
+                    try:
+                        # Determine statement type for logging
+                        stmt_type = self._get_statement_type(statement)
+                        stmt_name = self._extract_object_name(statement)
+
+                        cursor.execute(statement)
+
+                        # Log based on statement type
+                        if stmt_type in [
+                            'CREATE TABLE', 'CREATE INDEX', 'CREATE TRIGGER',
+                            'CREATE FUNCTION', 'CREATE POLICY', 'ALTER TABLE'
+                        ]:
+                            logger.info(f"  [+] {stmt_type}: {stmt_name}")
+                        elif stmt_type == 'DROP':
+                            logger.debug(f"  [-] {stmt_type}: {stmt_name}")
+                        elif stmt_type in ['COMMENT', 'DO']:
+                            logger.debug(f"  [*] {stmt_type}")
+                        else:
+                            logger.debug(f"  [*] Executed statement {idx}")
+
+                    except Exception as e:
+                        # Log but don't fail on errors (many will be "already exists")
+                        error_msg = str(e).lower()
+                        if 'already exists' in error_msg or 'does not exist' in error_msg:
+                            logger.debug(f"  [~] Skipped (already exists): {stmt_name}")
+                        else:
+                            logger.warning(f"  [!] Error in statement {idx}: {e}")
+
+                logger.info(f"Completed processing {sql_file}")
+
+            # Report final status of all tables
+            self._log_table_status(cursor)
 
             cursor.close()
             conn.close()
 
-            logger.info("Successfully created all PostgreSQL tables")
+            logger.info("Table creation process completed successfully")
 
         except Exception as e:
             logger.error(f"Failed to create PostgreSQL tables: {e}")
@@ -143,6 +142,187 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
                 f"Table creation failed: {e}\n\n"
                 f"SQL files location: {sql_dir}"
             )
+
+    def _split_sql_statements(self, sql_content: str) -> list:
+        """
+        Split SQL content into individual statements.
+
+        Handles complex cases like function definitions with semicolons inside.
+        """
+        statements = []
+        current = []
+        in_function = False
+        in_do_block = False
+
+        for line in sql_content.split('\n'):
+            stripped = line.strip()
+
+            # Track function/do block boundaries
+            if stripped.lower().startswith(('create function', 'create or replace function')):
+                in_function = True
+            elif stripped.lower().startswith('do $$'):
+                in_do_block = True
+            elif stripped == '$$;' and (in_function or in_do_block):
+                current.append(line)
+                statements.append('\n'.join(current))
+                current = []
+                in_function = False
+                in_do_block = False
+                continue
+
+            current.append(line)
+
+            # Split on semicolon only if not in function/do block
+            if stripped.endswith(';') and not in_function and not in_do_block:
+                statements.append('\n'.join(current))
+                current = []
+
+        if current:
+            statements.append('\n'.join(current))
+
+        return statements
+
+    def _get_statement_type(self, statement: str) -> str:
+        """Extract the type of SQL statement for logging."""
+        stmt_lower = statement.lower().strip()
+
+        if stmt_lower.startswith('create table'):
+            return 'CREATE TABLE'
+        elif stmt_lower.startswith('create index'):
+            return 'CREATE INDEX'
+        elif stmt_lower.startswith('create trigger'):
+            return 'CREATE TRIGGER'
+        elif stmt_lower.startswith('create or replace function'):
+            return 'CREATE FUNCTION'
+        elif stmt_lower.startswith('create function'):
+            return 'CREATE FUNCTION'
+        elif stmt_lower.startswith('create policy'):
+            return 'CREATE POLICY'
+        elif stmt_lower.startswith('create extension'):
+            return 'CREATE EXTENSION'
+        elif stmt_lower.startswith('alter table'):
+            return 'ALTER TABLE'
+        elif stmt_lower.startswith('drop'):
+            return 'DROP'
+        elif stmt_lower.startswith('comment'):
+            return 'COMMENT'
+        elif stmt_lower.startswith('do $$'):
+            return 'DO'
+        else:
+            return 'STATEMENT'
+
+    def _extract_object_name(self, statement: str) -> str:
+        """Extract object name from SQL statement for logging."""
+        stmt_lower = statement.lower().strip()
+
+        try:
+            # Handle various CREATE statements
+            if 'create table' in stmt_lower:
+                parts = stmt_lower.split('create table')[1].split()
+                for part in parts:
+                    if part not in ['if', 'not', 'exists']:
+                        return part.strip('(').replace('public.', '')
+
+            elif 'create index' in stmt_lower:
+                parts = stmt_lower.split('create index')[1].split()
+                for part in parts:
+                    if part not in ['if', 'not', 'exists']:
+                        return part.split()[0].replace('public.', '')
+
+            elif 'create trigger' in stmt_lower:
+                parts = stmt_lower.split('create trigger')[1].split()
+                return parts[0].replace('public.', '')
+
+            elif 'create function' in stmt_lower or 'create or replace function' in stmt_lower:
+                if 'replace function' in stmt_lower:
+                    parts = stmt_lower.split('function')[1].split('(')[0].strip()
+                else:
+                    parts = stmt_lower.split('create function')[1].split('(')[0].strip()
+                return parts.replace('public.', '')
+
+            elif 'create policy' in stmt_lower:
+                parts = stmt_lower.split('create policy')[1].split('"')
+                if len(parts) >= 2:
+                    return parts[1]
+
+            elif 'create extension' in stmt_lower:
+                parts = stmt_lower.split('create extension')[1].split()
+                for part in parts:
+                    if part not in ['if', 'not', 'exists']:
+                        return part.strip('"')
+
+            elif 'alter table' in stmt_lower:
+                parts = stmt_lower.split('alter table')[1].split()
+                return parts[0].replace('public.', '')
+
+            elif stmt_lower.startswith('drop'):
+                words = stmt_lower.split()
+                if len(words) >= 4 and words[0] == 'drop':
+                    return words[4] if 'exists' in stmt_lower else words[2]
+
+        except Exception:
+            pass
+
+        return "unknown"
+
+    def _log_table_status(self, cursor) -> None:
+        """Log the final status of all created tables."""
+        try:
+            # Check chat history tables
+            cursor.execute("""
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                AND table_name IN ('chat_threads', 'chat_messages')
+                ORDER BY table_name
+            """)
+            history_tables = [row[0] for row in cursor.fetchall()]
+
+            if history_tables:
+                logger.info(f"Chat history tables present: {', '.join(history_tables)}")
+
+            # Check facts tables
+            cursor.execute("""
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                AND table_name IN ('facts', 'processed_messages')
+                ORDER BY table_name
+            """)
+            facts_tables = [row[0] for row in cursor.fetchall()]
+
+            if facts_tables:
+                logger.info(f"Facts tables present: {', '.join(facts_tables)}")
+
+            # Check for dynamic embedding tables
+            cursor.execute("""
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                AND table_name LIKE 'fact_embeddings_%'
+                ORDER BY table_name
+            """)
+            embedding_tables = [row[0] for row in cursor.fetchall()]
+
+            if embedding_tables:
+                logger.info(f"Embedding tables present: {', '.join(embedding_tables)}")
+
+            # Check for functions
+            cursor.execute("""
+                SELECT routine_name
+                FROM information_schema.routines
+                WHERE routine_schema = 'public'
+                AND routine_name IN ('update_updated_at_column', 'embedding_table_exists',
+                                     'create_embedding_table', 'ensure_embedding_table', 'search_facts')
+                ORDER BY routine_name
+            """)
+            functions = [row[0] for row in cursor.fetchall()]
+
+            if functions:
+                logger.info(f"Functions present: {', '.join(functions)}")
+
+        except Exception as e:
+            logger.debug(f"Could not check table status: {e}")
 
     def _execute_query(
         self,
@@ -322,11 +502,15 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
     def insert_facts(
         self,
         user_id: str,
-        facts: List[Dict[str, Any]],
+        facts: Sequence[Dict[str, Any] | str],
         embeddings: Optional[List[List[float]]] = None,
         model_dimension: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Insert facts with optional embeddings into storage."""
+        """Insert facts with optional embeddings into storage.
+
+        Facts can be passed as simple strings for convenience.
+        They will be automatically converted to fact dictionaries.
+        """
         raise NotImplementedError(
             "Facts management not implemented for this backend. "
             "Use SupabaseStorageBackend for facts support."

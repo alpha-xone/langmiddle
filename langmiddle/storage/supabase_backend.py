@@ -7,7 +7,7 @@ This module provides Supabase-specific implementation of the chat storage interf
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from jose import JWTError, jwt
 from langchain_core.messages import AnyMessage
@@ -593,7 +593,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     def insert_facts(
         self,
         user_id: str,
-        facts: List[Dict[str, Any]],
+        facts: Sequence[Dict[str, Any] | str],
         embeddings: Optional[List[List[float]]] = None,
         model_dimension: Optional[int] = None,
     ) -> Dict[str, Any]:
@@ -602,9 +602,11 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
 
         Args:
             user_id: User identifier
-            facts: List of fact dictionaries with keys: content, namespace, language, intensity, confidence
+            facts: List of facts. Each fact can be either:
+                - A string (auto-converted to fact dictionary)
+                - A dictionary with keys: content, namespace, language, intensity, confidence
             embeddings: Optional list of embedding vectors (must match length of facts)
-            model_dimension: Dimension of the embedding vectors (required if embeddings provided)
+            model_dimension: Dimension of the embedding vectors (inferred if not provided)
 
         Returns:
             Dict with 'inserted_count', 'fact_ids', and 'errors' keys
@@ -616,13 +618,38 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         if not facts:
             return {"inserted_count": 0, "fact_ids": [], "errors": ["No facts provided"]}
 
-        # Validate embeddings if provided
-        if embeddings:
-            if len(embeddings) != len(facts):
+        # Normalize facts: convert strings to dictionaries
+        normalized_facts: List[Dict[str, Any]] = []
+        for idx, fact in enumerate(facts):
+            if isinstance(fact, str):
+                # Auto-convert string to fact dictionary
+                normalized_facts.append({
+                    "content": fact,
+                    "namespace": [],
+                    "language": "en",
+                })
+                logger.debug(f"Auto-converted string fact at index {idx} to dictionary")
+            elif isinstance(fact, dict):
+                normalized_facts.append(fact)
+            else:
                 return {
                     "inserted_count": 0,
                     "fact_ids": [],
-                    "errors": [f"Embeddings count ({len(embeddings)}) must match facts count ({len(facts)})"]
+                    "errors": [
+                        f"Fact at index {idx} must be a string or dictionary, got {type(fact).__name__}"
+                    ]
+                }
+
+        # After normalization, all facts are guaranteed to be dictionaries
+        facts_dicts: List[Dict[str, Any]] = normalized_facts
+
+        # Validate embeddings if provided
+        if embeddings:
+            if len(embeddings) != len(facts_dicts):
+                return {
+                    "inserted_count": 0,
+                    "fact_ids": [],
+                    "errors": [f"Embeddings count ({len(embeddings)}) must match facts count ({len(facts_dicts)})"]
                 }
 
             if not model_dimension:
@@ -638,7 +665,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                     }
 
         # Insert facts
-        for idx, fact in enumerate(facts):
+        for idx, fact in enumerate(facts_dicts):
             try:
                 # Prepare fact data
                 fact_data = {

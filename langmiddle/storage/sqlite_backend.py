@@ -7,7 +7,7 @@ This module provides a local SQLite-based implementation of the chat storage int
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from langchain_core.messages import AnyMessage
 
@@ -601,7 +601,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
     def insert_facts(
         self,
         user_id: str,
-        facts: List[Dict[str, Any]],
+        facts: Sequence[Dict[str, Any] | str],
         embeddings: Optional[List[List[float]]] = None,
         model_dimension: Optional[int] = None,
     ) -> Dict[str, Any]:

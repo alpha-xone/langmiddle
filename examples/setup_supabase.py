@@ -83,8 +83,8 @@ except Exception as e:
     print("\n💡 Alternative: Create tables manually")
     print("   1. Go to Supabase SQL Editor")
     print("   2. Run the SQL files from: langmiddle/storage/supabase/")
-    print("      - First: chat_threads.sql")
-    print("      - Then: chat_messages.sql")
+    print("      - chat_history.sql (chat threads and messages)")
+    print("      - chat_facts.sql (optional, for facts management)")
     sys.exit(1)
 
 print("\n" + "=" * 60)
