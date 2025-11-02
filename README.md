@@ -24,7 +24,7 @@ Production-ready middleware for **LangChain** and **LangGraph v1** with multi-ba
 |---|---|---|
 | ToolRemover | Removes tool-related messages from the conversation state (pre/post agent). | N/A (no backend needed) |
 | ChatSaver | Persists chat histories | SQLite ✅, PostgreSQL ✅, Supabase ✅, Firebase ✅ |
-| ContextEngineer | Auto context management with semantic memories | SQLite ✅, PostgreSQL ✅, Supabase ✅, Firebase ✅ |
+| ContextEngineer | Auto context management with semantic memories | Supabase ✅ |
 
 ## Installation
 
@@ -67,9 +67,9 @@ agent = create_agent(
 agent.invoke(
     input={"messages": [{"role": "user", "content": "Hello!"}]},
     context={
-        "user_id": "user-123",
-        "session_id": "session-123",
-    }
+        "user_id": "***",           # User ID in UUID format
+        "session_id": "***",        # Thread ID in UUID format
+    },
 )
 ```
 
@@ -87,6 +87,7 @@ llm = init_chat_model("gpt-4o")
 embedder = init_embeddings("text-embedding-3-small")
 
 # When running for **the first time**, create databases in the backend
+# Requires connection string for table creations
 store = ChatStorage.create(
     "supabase",
     auto_create_tables=True,
@@ -97,6 +98,7 @@ store = ChatStorage.create(
 agent = create_agent(
     model="gpt-4o",
     tools=[],
+    context_schema=StorageContext,
     middleware=[
         ContextEngineer(
             model=llm,
@@ -105,6 +107,15 @@ agent = create_agent(
             backend_kwargs={'enable_facts': True},
         ),
     ],
+)
+
+agent.invoke(
+    input={"messages": [{"role": "user", "content": "Tell me about my preferences."}]},
+    context={
+        "user_id": "***",           # User ID in UUID format
+        "session_id": "***",        # Thread ID in UUID format
+        "auth_token": "***",        # JWT token for supabase backend
+    },
 )
 ```
 
@@ -149,6 +160,9 @@ See [PostgreSQL Setup Guide](docs/POSTGRES_SETUP.md) for details.
 # .env file or environment variables
 SUPABASE_URL=your_supabase_url
 SUPABASE_ANON_KEY=your_anon_key
+
+# To create tables
+SUPABASE_CONNECTION_STRING=your_connection_string
 ```
 
 ### Firebase Configuration

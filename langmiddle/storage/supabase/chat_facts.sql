@@ -32,6 +32,275 @@ create index if not exists facts_namespace_idx on public.facts using gin (namesp
 create index if not exists facts_dimension_idx on public.facts (model_dimension);
 
 -- ==========================================================
+-- HISTORY TABLE: fact_history
+-- Tracks all changes to facts (insert, update, delete)
+-- ==========================================================
+create table if not exists public.fact_history (
+  id uuid primary key default gen_random_uuid(),
+  fact_id uuid not null,  -- Not a foreign key since fact may be deleted
+  user_id uuid not null references auth.users(id) on delete cascade,
+
+  operation text not null check (operation in ('INSERT', 'UPDATE', 'DELETE')),
+
+  -- Snapshot of fact data at this point in time
+  content text not null,
+  namespace text[] not null,
+  language text not null,
+  intensity float8,
+  confidence float8,
+  model_dimension int not null,
+
+  -- Change metadata
+  changed_at timestamptz not null default now(),
+  changed_by text,  -- Optional: track which system/agent made the change
+  change_reason text,  -- Optional: reason for the change (e.g., 'user_update', 'auto_merge', 'contradiction_resolved')
+
+  -- Track what changed (for updates)
+  changed_fields jsonb,  -- e.g., {"content": {"old": "...", "new": "..."}, "namespace": {...}}
+
+  -- Link to previous version for easy traversal
+  previous_version_id uuid references public.fact_history(id)
+);
+
+comment on table public.fact_history is 'Immutable audit log of all fact changes';
+comment on column public.fact_history.operation is 'Type of change: INSERT, UPDATE, or DELETE';
+comment on column public.fact_history.changed_fields is 'JSON object showing what changed (null for INSERT/DELETE)';
+comment on column public.fact_history.previous_version_id is 'Links to previous version for version chain traversal';
+
+create index if not exists fact_history_fact_id_idx on public.fact_history (fact_id);
+create index if not exists fact_history_user_id_idx on public.fact_history (user_id);
+create index if not exists fact_history_changed_at_idx on public.fact_history (changed_at desc);
+create index if not exists fact_history_operation_idx on public.fact_history (operation);
+
+-- ==========================================================
+-- TRIGGER: Auto-populate fact_history on changes
+-- ==========================================================
+create or replace function public.track_fact_changes()
+returns trigger
+language plpgsql
+security definer
+as $$
+declare
+  v_operation text;
+  v_changed_fields jsonb := null;
+  v_previous_version_id uuid := null;
+begin
+  -- Determine operation type
+  if (TG_OP = 'DELETE') then
+    v_operation := 'DELETE';
+
+    -- Get the last history entry for this fact
+    select id into v_previous_version_id
+    from public.fact_history
+    where fact_id = OLD.id
+    order by changed_at desc
+    limit 1;
+
+    -- Insert history record for deletion
+    insert into public.fact_history (
+      fact_id, user_id, operation,
+      content, namespace, language, intensity, confidence, model_dimension,
+      previous_version_id
+    ) values (
+      OLD.id, OLD.user_id, v_operation,
+      OLD.content, OLD.namespace, OLD.language, OLD.intensity, OLD.confidence, OLD.model_dimension,
+      v_previous_version_id
+    );
+
+    return OLD;
+
+  elsif (TG_OP = 'UPDATE') then
+    v_operation := 'UPDATE';
+
+    -- Get the last history entry for this fact
+    select id into v_previous_version_id
+    from public.fact_history
+    where fact_id = OLD.id
+    order by changed_at desc
+    limit 1;
+
+    -- Build changed_fields JSON
+    v_changed_fields := jsonb_build_object();
+
+    if OLD.content != NEW.content then
+      v_changed_fields := v_changed_fields || jsonb_build_object(
+        'content', jsonb_build_object('old', OLD.content, 'new', NEW.content)
+      );
+    end if;
+
+    if OLD.namespace != NEW.namespace then
+      v_changed_fields := v_changed_fields || jsonb_build_object(
+        'namespace', jsonb_build_object('old', OLD.namespace, 'new', NEW.namespace)
+      );
+    end if;
+
+    if OLD.language != NEW.language then
+      v_changed_fields := v_changed_fields || jsonb_build_object(
+        'language', jsonb_build_object('old', OLD.language, 'new', NEW.language)
+      );
+    end if;
+
+    if OLD.intensity is distinct from NEW.intensity then
+      v_changed_fields := v_changed_fields || jsonb_build_object(
+        'intensity', jsonb_build_object('old', OLD.intensity, 'new', NEW.intensity)
+      );
+    end if;
+
+    if OLD.confidence is distinct from NEW.confidence then
+      v_changed_fields := v_changed_fields || jsonb_build_object(
+        'confidence', jsonb_build_object('old', OLD.confidence, 'new', NEW.confidence)
+      );
+    end if;
+
+    if OLD.model_dimension != NEW.model_dimension then
+      v_changed_fields := v_changed_fields || jsonb_build_object(
+        'model_dimension', jsonb_build_object('old', OLD.model_dimension, 'new', NEW.model_dimension)
+      );
+    end if;
+
+    -- Insert history record for update
+    insert into public.fact_history (
+      fact_id, user_id, operation,
+      content, namespace, language, intensity, confidence, model_dimension,
+      changed_fields, previous_version_id
+    ) values (
+      NEW.id, NEW.user_id, v_operation,
+      NEW.content, NEW.namespace, NEW.language, NEW.intensity, NEW.confidence, NEW.model_dimension,
+      v_changed_fields, v_previous_version_id
+    );
+
+    return NEW;
+
+  elsif (TG_OP = 'INSERT') then
+    v_operation := 'INSERT';
+
+    -- Insert history record for new fact
+    insert into public.fact_history (
+      fact_id, user_id, operation,
+      content, namespace, language, intensity, confidence, model_dimension
+    ) values (
+      NEW.id, NEW.user_id, v_operation,
+      NEW.content, NEW.namespace, NEW.language, NEW.intensity, NEW.confidence, NEW.model_dimension
+    );
+
+    return NEW;
+  end if;
+
+  return null;
+end;
+$$;
+
+-- Drop existing trigger if it exists
+drop trigger if exists track_fact_changes_trigger on public.facts;
+
+-- Create trigger for all operations
+create trigger track_fact_changes_trigger
+  after insert or update or delete on public.facts
+  for each row execute function public.track_fact_changes();
+
+-- ==========================================================
+-- RLS: fact_history table
+-- ==========================================================
+alter table public.fact_history enable row level security;
+
+drop policy if exists "users_view_own_fact_history" on public.fact_history;
+create policy "users_view_own_fact_history"
+  on public.fact_history
+  for select
+  using (auth.uid() = user_id);
+
+-- ==========================================================
+-- HELPER FUNCTIONS: Query fact history
+-- ==========================================================
+
+-- Get full history for a specific fact
+create or replace function public.get_fact_history(p_fact_id uuid, p_user_id uuid)
+returns table (
+  id uuid,
+  fact_id uuid,
+  operation text,
+  content text,
+  namespace text[],
+  language text,
+  intensity float8,
+  confidence float8,
+  model_dimension int,
+  changed_at timestamptz,
+  changed_by text,
+  change_reason text,
+  changed_fields jsonb,
+  previous_version_id uuid
+)
+language sql
+stable
+security definer
+as $$
+  select
+    id, fact_id, operation,
+    content, namespace, language, intensity, confidence, model_dimension,
+    changed_at, changed_by, change_reason, changed_fields, previous_version_id
+  from public.fact_history
+  where fact_id = p_fact_id
+    and user_id = p_user_id
+  order by changed_at desc;
+$$;
+
+-- Get recent fact changes for a user
+create or replace function public.get_recent_fact_changes(
+  p_user_id uuid,
+  p_limit int default 50,
+  p_operation text default null
+)
+returns table (
+  id uuid,
+  fact_id uuid,
+  operation text,
+  content text,
+  namespace text[],
+  changed_at timestamptz,
+  changed_fields jsonb
+)
+language sql
+stable
+security definer
+as $$
+  select
+    id, fact_id, operation,
+    content, namespace,
+    changed_at, changed_fields
+  from public.fact_history
+  where user_id = p_user_id
+    and (p_operation is null or operation = p_operation)
+  order by changed_at desc
+  limit p_limit;
+$$;
+
+-- Get statistics about fact changes
+create or replace function public.get_fact_change_stats(p_user_id uuid)
+returns table (
+  total_changes bigint,
+  inserts bigint,
+  updates bigint,
+  deletes bigint,
+  oldest_change timestamptz,
+  newest_change timestamptz
+)
+language sql
+stable
+security definer
+as $$
+  select
+    count(*) as total_changes,
+    count(*) filter (where operation = 'INSERT') as inserts,
+    count(*) filter (where operation = 'UPDATE') as updates,
+    count(*) filter (where operation = 'DELETE') as deletes,
+    min(changed_at) as oldest_change,
+    max(changed_at) as newest_change
+  from public.fact_history
+  where user_id = p_user_id;
+$$;
+
+-- ==========================================================
 -- RLS: facts table
 -- ==========================================================
 alter table public.facts enable row level security;

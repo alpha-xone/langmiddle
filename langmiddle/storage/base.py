@@ -291,6 +291,57 @@ class ChatStorageBackend(ABC):
         """
         raise NotImplementedError("`delete_fact` not implemented")
 
+    def get_fact_history(
+        self,
+        fact_id: str,
+        user_id: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get complete history for a specific fact.
+
+        Args:
+            fact_id: Fact identifier
+            user_id: User identifier for authorization
+
+        Returns:
+            List of history records, ordered from newest to oldest
+        """
+        raise NotImplementedError("`get_fact_history` not implemented for this backend")
+
+    def get_recent_fact_changes(
+        self,
+        user_id: str,
+        limit: int = 50,
+        operation: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get recent fact changes for a user.
+
+        Args:
+            user_id: User identifier
+            limit: Maximum number of records to return
+            operation: Optional filter by operation type ('INSERT', 'UPDATE', 'DELETE')
+
+        Returns:
+            List of recent change records
+        """
+        raise NotImplementedError("`get_recent_fact_changes` not implemented for this backend")
+
+    def get_fact_change_stats(
+        self,
+        user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get statistics about fact changes for a user.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Dictionary with change statistics or None
+        """
+        raise NotImplementedError("`get_fact_change_stats` not implemented for this backend")
+
     @abstractmethod
     def check_processed_message(
         self,

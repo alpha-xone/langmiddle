@@ -745,3 +745,123 @@ class ChatStorage:
         return self.backend.mark_processed_messages_batch(
             user_id=user_id, message_data=message_data
         )
+
+    # =========================================================================
+    # Fact History Methods
+    # =========================================================================
+
+    def get_fact_history(
+        self,
+        credentials: Dict[str, Any] | None,
+        fact_id: str,
+        user_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get complete history for a specific fact.
+
+        Args:
+            credentials: Authentication credentials (format varies by backend)
+            fact_id: Fact identifier
+            user_id: Optional user identifier (extracted from credentials if not provided)
+
+        Returns:
+            List of history records, ordered from newest to oldest
+        """
+        if not self.backend.authenticate(credentials):
+            logger.error("Authentication failed for get_fact_history")
+            return []
+
+        # Extract user ID if not provided
+        if not user_id:
+            user_id = self.backend.extract_user_id(credentials)
+
+        if not user_id:
+            logger.error("Could not determine user_id for get_fact_history")
+            return []
+
+        # Check if backend supports fact history
+        if not hasattr(self.backend, 'get_fact_history'):
+            logger.warning(f"Backend {type(self.backend).__name__} does not support fact history")
+            return []
+
+        return self.backend.get_fact_history(fact_id=fact_id, user_id=user_id)
+
+    def get_recent_fact_changes(
+        self,
+        credentials: Dict[str, Any] | None,
+        limit: int = 50,
+        operation: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get recent fact changes for a user.
+
+        Args:
+            credentials: Authentication credentials (format varies by backend)
+            limit: Maximum number of records to return (default: 50)
+            operation: Optional filter by operation type ('INSERT', 'UPDATE', 'DELETE')
+            user_id: Optional user identifier (extracted from credentials if not provided)
+
+        Returns:
+            List of recent change records
+        """
+        if not self.backend.authenticate(credentials):
+            logger.error("Authentication failed for get_recent_fact_changes")
+            return []
+
+        # Extract user ID if not provided
+        if not user_id:
+            user_id = self.backend.extract_user_id(credentials)
+
+        if not user_id:
+            logger.error("Could not determine user_id for get_recent_fact_changes")
+            return []
+
+        # Check if backend supports fact history
+        if not hasattr(self.backend, 'get_recent_fact_changes'):
+            logger.warning(f"Backend {type(self.backend).__name__} does not support fact history")
+            return []
+
+        return self.backend.get_recent_fact_changes(
+            user_id=user_id, limit=limit, operation=operation
+        )
+
+    def get_fact_change_stats(
+        self,
+        credentials: Dict[str, Any] | None,
+        user_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get statistics about fact changes for a user.
+
+        Args:
+            credentials: Authentication credentials (format varies by backend)
+            user_id: Optional user identifier (extracted from credentials if not provided)
+
+        Returns:
+            Dictionary with change statistics:
+                - total_changes: Total number of changes
+                - inserts: Number of INSERT operations
+                - updates: Number of UPDATE operations
+                - deletes: Number of DELETE operations
+                - oldest_change: Timestamp of oldest change
+                - newest_change: Timestamp of newest change
+        """
+        if not self.backend.authenticate(credentials):
+            logger.error("Authentication failed for get_fact_change_stats")
+            return None
+
+        # Extract user ID if not provided
+        if not user_id:
+            user_id = self.backend.extract_user_id(credentials)
+
+        if not user_id:
+            logger.error("Could not determine user_id for get_fact_change_stats")
+            return None
+
+        # Check if backend supports fact history
+        if not hasattr(self.backend, 'get_fact_change_stats'):
+            logger.warning(f"Backend {type(self.backend).__name__} does not support fact history")
+            return None
+
+        return self.backend.get_fact_change_stats(user_id=user_id)

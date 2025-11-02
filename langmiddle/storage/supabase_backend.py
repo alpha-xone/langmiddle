@@ -762,6 +762,11 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             List of fact dictionaries with similarity scores
         """
         try:
+            # Convert empty list to None to avoid PostgreSQL array dimension errors
+            namespaces_param = None
+            if filter_namespaces:
+                namespaces_param = filter_namespaces
+
             # Prepare parameters for RPC call
             params = {
                 "p_embedding": query_embedding,
@@ -769,7 +774,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 "p_user_id": user_id,
                 "p_threshold": match_threshold,
                 "p_limit": match_count,
-                "p_namespaces": filter_namespaces if filter_namespaces else None,
+                "p_namespaces": namespaces_param,
             }
 
             # Call the search function
@@ -1087,3 +1092,117 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 return True
             logger.error(f"Error marking messages as processed in batch: {e}")
             return False
+
+    # =========================================================================
+    # Fact History Methods
+    # =========================================================================
+
+    def get_fact_history(
+        self,
+        fact_id: str,
+        user_id: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get complete history for a specific fact.
+
+        Args:
+            fact_id: Fact identifier
+            user_id: User identifier for authorization
+
+        Returns:
+            List of history records, ordered from newest to oldest
+        """
+        try:
+            result = self.client.rpc(
+                "get_fact_history",
+                {"p_fact_id": fact_id, "p_user_id": user_id}
+            ).execute()
+
+            if not result.data:
+                logger.debug(f"No history found for fact {fact_id}")
+                return []
+
+            logger.info(f"Found {len(result.data)} history records for fact {fact_id}")
+            return result.data
+
+        except Exception as e:
+            logger.error(f"Error getting fact history for {fact_id}: {e}")
+            return []
+
+    def get_recent_fact_changes(
+        self,
+        user_id: str,
+        limit: int = 50,
+        operation: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get recent fact changes for a user.
+
+        Args:
+            user_id: User identifier
+            limit: Maximum number of records to return
+            operation: Optional filter by operation type ('INSERT', 'UPDATE', 'DELETE')
+
+        Returns:
+            List of recent change records
+        """
+        try:
+            result = self.client.rpc(
+                "get_recent_fact_changes",
+                {
+                    "p_user_id": user_id,
+                    "p_limit": limit,
+                    "p_operation": operation,
+                }
+            ).execute()
+
+            if not result.data:
+                logger.debug(f"No recent changes found for user {user_id}")
+                return []
+
+            logger.info(f"Found {len(result.data)} recent fact changes for user {user_id}")
+            return result.data
+
+        except Exception as e:
+            logger.error(f"Error getting recent fact changes for user {user_id}: {e}")
+            return []
+
+    def get_fact_change_stats(
+        self,
+        user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get statistics about fact changes for a user.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Dictionary with change statistics:
+                - total_changes: Total number of changes
+                - inserts: Number of INSERT operations
+                - updates: Number of UPDATE operations
+                - deletes: Number of DELETE operations
+                - oldest_change: Timestamp of oldest change
+                - newest_change: Timestamp of newest change
+        """
+        try:
+            result = self.client.rpc(
+                "get_fact_change_stats",
+                {"p_user_id": user_id}
+            ).execute()
+
+            if not result.data:
+                logger.debug(f"No change stats found for user {user_id}")
+                return None
+
+            stats = result.data[0]
+            logger.info(
+                f"Fact change stats for user {user_id}: "
+                f"{stats.get('total_changes')} total changes"
+            )
+            return stats
+
+        except Exception as e:
+            logger.error(f"Error getting fact change stats for user {user_id}: {e}")
+            return None

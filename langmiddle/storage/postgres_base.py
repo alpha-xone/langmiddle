@@ -565,3 +565,36 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
             "Facts management not implemented for this backend. "
             "Use SupabaseStorageBackend for facts support."
         )
+
+    def get_fact_history(
+        self,
+        fact_id: str,
+        user_id: str,
+    ) -> List[Dict[str, Any]]:
+        """Get complete history for a specific fact."""
+        raise NotImplementedError(
+            "Fact history not implemented for this backend. "
+            "Use SupabaseStorageBackend for fact history support."
+        )
+
+    def get_recent_fact_changes(
+        self,
+        user_id: str,
+        limit: int = 50,
+        operation: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get recent fact changes for a user."""
+        raise NotImplementedError(
+            "Fact history not implemented for this backend. "
+            "Use SupabaseStorageBackend for fact history support."
+        )
+
+    def get_fact_change_stats(
+        self,
+        user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Get statistics about fact changes for a user."""
+        raise NotImplementedError(
+            "Fact history not implemented for this backend. "
+            "Use SupabaseStorageBackend for fact history support."
+        )
