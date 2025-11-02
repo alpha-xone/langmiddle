@@ -660,3 +660,48 @@ class SQLiteStorageBackend(ChatStorageBackend):
             "Facts management not supported in SQLite backend. "
             "Use SupabaseStorageBackend for vector similarity search and facts support."
         )
+
+    def check_processed_message(
+        self,
+        user_id: str,
+        message_id: str,
+    ) -> bool:
+        """Check if a message has already been processed."""
+        raise NotImplementedError(
+            "Processed messages tracking not supported in SQLite backend. "
+            "Use SupabaseStorageBackend for facts support."
+        )
+
+    def mark_processed_message(
+        self,
+        user_id: str,
+        message_id: str,
+        thread_id: str,
+    ) -> bool:
+        """Mark a message as processed."""
+        raise NotImplementedError(
+            "Processed messages tracking not supported in SQLite backend. "
+            "Use SupabaseStorageBackend for facts support."
+        )
+
+    def check_processed_messages_batch(
+        self,
+        user_id: str,
+        message_ids: List[str],
+    ) -> List[str]:
+        """Check which messages have already been processed (batch mode)."""
+        raise NotImplementedError(
+            "Processed messages tracking not supported in SQLite backend. "
+            "Use SupabaseStorageBackend for facts support."
+        )
+
+    def mark_processed_messages_batch(
+        self,
+        user_id: str,
+        message_data: List[Dict[str, str]],
+    ) -> bool:
+        """Mark multiple messages as processed (batch mode)."""
+        raise NotImplementedError(
+            "Processed messages tracking not supported in SQLite backend. "
+            "Use SupabaseStorageBackend for facts support."
+        )

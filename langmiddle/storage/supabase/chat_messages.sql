@@ -31,3 +31,14 @@ create index IF not exists idx_chat_messages_user_id on public.chat_messages usi
 create index IF not exists idx_chat_messages_thread_id on public.chat_messages using btree (thread_id) TABLESPACE pg_default;
 
 create index IF not exists idx_chat_messages_created_at on public.chat_messages using btree (created_at) TABLESPACE pg_default;
+
+-- Enable RLS
+alter table public.chat_messages enable row level security;
+
+-- RLS Policy
+drop policy if exists "users_manage_own_messages" on public.chat_messages;
+create policy "users_manage_own_messages"
+  on public.chat_messages
+  for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);

@@ -10,7 +10,7 @@ create extension if not exists "vector";
 -- ==========================================================
 create table if not exists public.facts (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id uuid not null,
 
   content text not null,
   namespace text[] not null default '{}',
@@ -32,21 +32,18 @@ create index if not exists facts_namespace_idx on public.facts using gin (namesp
 create index if not exists facts_dimension_idx on public.facts (model_dimension);
 
 -- ==========================================================
--- RLS: facts table
--- ==========================================================
-alter table public.facts enable row level security;
-
-create policy "users_manage_own_facts"
-  on public.facts
-  for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
-
--- ==========================================================
 -- DYNAMIC EMBEDDING TABLES
 -- Tables are created on-demand per dimension size
 -- Example: fact_embeddings_1536, fact_embeddings_768, etc.
 -- ==========================================================
+
+-- Drop existing functions to avoid conflicts
+drop function if exists public.embedding_table_exists(int);
+drop function if exists public.create_embedding_table(int);
+drop function if exists public.ensure_embedding_table(int);
+drop function if exists public.search_facts(vector, int, uuid, float8, int, text[][]);
+drop function if exists public.search_facts_by_embedding;
+drop function if exists public.get_or_create_embedding_table;
 
 -- Helper: Check if embedding table exists
 create or replace function public.embedding_table_exists(p_dimension int)
@@ -66,7 +63,6 @@ $$;
 create or replace function public.create_embedding_table(p_dimension int)
 returns void
 language plpgsql
-security definer
 as $$
 declare
   v_table_name text := 'fact_embeddings_' || p_dimension;
@@ -78,28 +74,18 @@ begin
 
   -- Create table
   execute format(
-    'create table public.%I (
+    'create table if not exists public.%I (
       fact_id uuid primary key references public.facts(id) on delete cascade,
       embedding vector(%s) not null
     )',
     v_table_name, p_dimension
   );
 
-  -- Create vector index
+  -- Create vector index (drop first if exists)
+  execute format('drop index if exists public.%I', v_table_name || '_idx');
   execute format(
     'create index %I on public.%I using ivfflat (embedding vector_l2_ops) with (lists = 100)',
     v_table_name || '_idx', v_table_name
-  );
-
-  -- Enable RLS
-  execute format('alter table public.%I enable row level security', v_table_name);
-
-  -- Create policy
-  execute format(
-    'create policy "users_access_own_embeddings" on public.%I
-      for all
-      using (fact_id in (select id from public.facts where user_id = auth.uid()))',
-    v_table_name
   );
 end;
 $$;
@@ -141,7 +127,6 @@ returns table (
 )
 language plpgsql
 stable
-security definer
 as $$
 declare
   v_table_name text := 'fact_embeddings_' || p_dimension;
@@ -188,3 +173,38 @@ begin
     using p_embedding, p_user_id, p_dimension, p_threshold, p_limit, p_namespaces;
 end;
 $$;
+
+-- ==========================================================
+-- PROCESSED MESSAGES TRACKING
+-- Tracks which messages have been processed for fact extraction
+-- to avoid duplicate work
+-- ==========================================================
+
+create table if not exists public.processed_messages (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  message_id text not null,
+  thread_id uuid,
+  processed_at timestamptz not null default now(),
+
+  constraint processed_messages_unique unique (user_id, message_id)
+);
+
+comment on table public.processed_messages is 'Tracks messages processed for fact extraction to avoid duplicates';
+comment on column public.processed_messages.message_id is 'Message ID from chat_messages or LangChain message.id';
+
+create index if not exists processed_messages_user_id_idx on public.processed_messages (user_id);
+create index if not exists processed_messages_message_id_idx on public.processed_messages (message_id);
+create index if not exists processed_messages_thread_id_idx on public.processed_messages (thread_id);
+
+-- Add foreign key constraint if chat_threads table exists
+do $$
+begin
+  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'chat_threads') then
+    execute 'alter table public.processed_messages
+             add constraint processed_messages_thread_id_fkey
+             foreign key (thread_id) references public.chat_threads(id) on delete cascade';
+  end if;
+exception
+  when duplicate_object then null;
+end $$;

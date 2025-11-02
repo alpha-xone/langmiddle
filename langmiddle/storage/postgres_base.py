@@ -27,7 +27,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
     """
 
     def _create_tables_with_psycopg2(
-        self, connection_string: str, sql_dir: Path
+        self, connection_string: str, sql_dir: Path, enable_facts: bool = False
     ) -> None:
         """
         Create PostgreSQL tables from SQL files if they don't exist.
@@ -37,11 +37,16 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
         Args:
             connection_string: PostgreSQL connection string for direct database access
-            sql_dir: Path to directory containing SQL schema files
+            sql_dir: Path to directory containing SQL schema files (e.g., 'postgres/' or 'supabase/')
+            enable_facts: Whether to create facts-related tables (chat_facts.sql with processed_messages)
 
         Raises:
             ImportError: If psycopg2 is not installed
             Exception: If table creation fails
+
+        Note:
+            - For PostgreSQL backend: uses generic SQL without authentication dependencies
+            - For Supabase backend: uses Supabase-specific auth.users and RLS policies
         """
         try:
             import psycopg2
@@ -110,6 +115,10 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
             # Execute SQL files in order (threads first, then messages due to foreign key)
             sql_files = ["chat_threads.sql", "chat_messages.sql"]
+
+            # Add facts-related SQL file if enabled (includes processed_messages table)
+            if enable_facts:
+                sql_files.append("chat_facts.sql")
 
             for sql_file in sql_files:
                 sql_path = sql_dir / sql_file

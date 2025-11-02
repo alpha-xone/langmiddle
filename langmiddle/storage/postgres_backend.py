@@ -26,6 +26,7 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
         self,
         connection_string: Optional[str] = None,
         auto_create_tables: bool = False,
+        enable_facts: bool = False,
         load_from_env: bool = True,
     ):
         """
@@ -33,7 +34,8 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
         Args:
             connection_string: PostgreSQL connection string (optional if using .env)
-            auto_create_tables: Whether to automatically create tables if they don't exist (default: False)
+            auto_create_tables: Whether to automatically create chat tables if they don't exist (default: False)
+            enable_facts: Whether to create facts-related tables (requires auto_create_tables=True) (default: False)
             load_from_env: Whether to load connection string from .env file (default: True)
 
         Raises:
@@ -41,11 +43,19 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
             ValueError: If connection string is not provided and not found in environment
 
         Example:
-            # Using connection string directly
+            # Using connection string directly (chat only)
             storage = ChatStorage.create(
                 "postgres",
                 connection_string="postgresql://user:password@localhost:5432/dbname",
                 auto_create_tables=True
+            )
+
+            # With facts support
+            storage = ChatStorage.create(
+                "postgres",
+                connection_string="postgresql://user:password@localhost:5432/dbname",
+                auto_create_tables=True,
+                enable_facts=True
             )
 
             # Using environment variables
@@ -97,7 +107,9 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
         # Create tables if requested
         if auto_create_tables:
             sql_dir = Path(__file__).parent / "postgres"
-            self._create_tables_with_psycopg2(connection_string, sql_dir)
+            self._create_tables_with_psycopg2(
+                connection_string, sql_dir, enable_facts=enable_facts
+            )
 
     def _get_connection(self):
         """Get a connection from the pool."""
@@ -431,3 +443,122 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
             logger.info(f"Deleted thread {thread_id} and all its messages")
         except Exception as e:
             logger.error(f"Error deleting thread {thread_id}: {e}")
+
+    # Facts management methods (not yet implemented for direct PostgreSQL)
+    def insert_fact(
+        self,
+        user_id: str,
+        namespace: str,
+        content: str,
+        embedding: List[float],
+    ) -> Optional[str]:
+        """Insert a fact with its embedding."""
+        raise NotImplementedError(
+            "Facts management not yet implemented in PostgreSQL backend. "
+            "Use SupabaseStorageBackend for vector similarity search and facts support."
+        )
+
+    def update_fact(
+        self,
+        fact_id: str,
+        user_id: str,
+        updates: Dict[str, Any],
+        embedding: Optional[List[float]] = None,
+    ) -> bool:
+        """Update a fact and its embedding."""
+        raise NotImplementedError(
+            "Facts management not yet implemented in PostgreSQL backend. "
+            "Use SupabaseStorageBackend for vector similarity search and facts support."
+        )
+
+    def query_facts(
+        self,
+        query_embedding: List[float],
+        user_id: str,
+        model_dimension: int,
+        match_threshold: float = 0.75,
+        match_count: int = 10,
+        filter_namespaces: Optional[List[List[str]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Query facts using vector similarity."""
+        raise NotImplementedError(
+            "Facts management not yet implemented in PostgreSQL backend. "
+            "Use SupabaseStorageBackend for vector similarity search and facts support."
+        )
+
+    def get_fact_by_id(
+        self,
+        fact_id: str,
+        user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Get a fact by its ID."""
+        raise NotImplementedError(
+            "Facts management not yet implemented in PostgreSQL backend. "
+            "Use SupabaseStorageBackend for vector similarity search and facts support."
+        )
+
+    def delete_fact(
+        self,
+        fact_id: str,
+        user_id: str,
+    ) -> bool:
+        """Delete a fact and its embeddings."""
+        raise NotImplementedError(
+            "Facts management not yet implemented in PostgreSQL backend. "
+            "Use SupabaseStorageBackend for vector similarity search and facts support."
+        )
+
+    def check_processed_message(
+        self,
+        user_id: str,
+        message_id: str,
+    ) -> bool:
+        """Check if a message has already been processed."""
+        raise NotImplementedError(
+            "Processed messages tracking not yet implemented in PostgreSQL backend. "
+            "Use SupabaseStorageBackend for facts support."
+        )
+
+    def mark_processed_message(
+        self,
+        user_id: str,
+        message_id: str,
+        thread_id: str,
+    ) -> bool:
+        """Mark a message as processed."""
+        raise NotImplementedError(
+            "Processed messages tracking not yet implemented in PostgreSQL backend. "
+            "Use SupabaseStorageBackend for facts support."
+        )
+
+    def check_processed_messages_batch(
+        self,
+        user_id: str,
+        message_ids: List[str],
+    ) -> List[str]:
+        """Check which messages have already been processed (batch mode)."""
+        raise NotImplementedError(
+            "Processed messages tracking not yet implemented in PostgreSQL backend. "
+            "Use SupabaseStorageBackend for facts support."
+        )
+
+    def mark_processed_messages_batch(
+        self,
+        user_id: str,
+        message_data: List[Dict[str, str]],
+    ) -> bool:
+        """Mark multiple messages as processed (batch mode)."""
+        raise NotImplementedError(
+            "Processed messages tracking not yet implemented in PostgreSQL backend. "
+            "Use SupabaseStorageBackend for facts support."
+        )
+
+    def get_or_create_embedding_table(
+        self,
+        dimension: int,
+    ) -> bool:
+        """Ensure an embedding table exists for the given dimension."""
+        raise NotImplementedError(
+            "Facts management not yet implemented in PostgreSQL backend. "
+            "Use SupabaseStorageBackend for vector similarity search and facts support."
+        )

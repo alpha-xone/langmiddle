@@ -267,6 +267,80 @@ class ChatStorageBackend(ABC):
         raise NotImplementedError("`delete_fact` not implemented")
 
     @abstractmethod
+    def check_processed_message(
+        self,
+        user_id: str,
+        message_id: str,
+    ) -> bool:
+        """
+        Check if a message has already been processed for fact extraction.
+
+        Args:
+            user_id: User identifier
+            message_id: Message identifier
+
+        Returns:
+            True if message has been processed, False otherwise
+        """
+        raise NotImplementedError("`check_processed_message` not implemented")
+
+    @abstractmethod
+    def mark_processed_message(
+        self,
+        user_id: str,
+        message_id: str,
+        thread_id: str,
+    ) -> bool:
+        """
+        Mark a message as processed for fact extraction.
+
+        Args:
+            user_id: User identifier
+            message_id: Message identifier
+            thread_id: Thread identifier
+
+        Returns:
+            True if marked successfully, False otherwise
+        """
+        raise NotImplementedError("`mark_processed_message` not implemented")
+
+    @abstractmethod
+    def check_processed_messages_batch(
+        self,
+        user_id: str,
+        message_ids: List[str],
+    ) -> List[str]:
+        """
+        Check which messages have already been processed (batch mode).
+
+        Args:
+            user_id: User identifier
+            message_ids: List of message identifiers to check
+
+        Returns:
+            List of message IDs that have been processed
+        """
+        raise NotImplementedError("`check_processed_messages_batch` not implemented")
+
+    @abstractmethod
+    def mark_processed_messages_batch(
+        self,
+        user_id: str,
+        message_data: List[Dict[str, str]],
+    ) -> bool:
+        """
+        Mark multiple messages as processed (batch mode).
+
+        Args:
+            user_id: User identifier
+            message_data: List of dicts with 'message_id' and 'thread_id' keys
+
+        Returns:
+            True if all marked successfully, False otherwise
+        """
+        raise NotImplementedError("`mark_processed_messages_batch` not implemented")
+
+    @abstractmethod
     def get_or_create_embedding_table(
         self,
         dimension: int,

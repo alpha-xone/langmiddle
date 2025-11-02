@@ -17,3 +17,14 @@ create index IF not exists idx_chat_threads_updated_at on public.chat_threads us
 create trigger update_chat_threads_updated_at BEFORE
 update on chat_threads for EACH row
 execute FUNCTION update_updated_at_column ();
+
+-- Enable RLS
+alter table public.chat_threads enable row level security;
+
+-- RLS Policy
+drop policy if exists "users_manage_own_threads" on public.chat_threads;
+create policy "users_manage_own_threads"
+  on public.chat_threads
+  for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);

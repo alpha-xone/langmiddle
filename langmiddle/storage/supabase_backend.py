@@ -70,6 +70,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         supabase_key: Optional[str] = None,
         connection_string: Optional[str] = None,
         auto_create_tables: bool = False,
+        enable_facts: bool = False,
         load_from_env: bool = True,
     ):
         """
@@ -80,7 +81,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             supabase_url: Supabase project URL (optional if client provided or using .env)
             supabase_key: Supabase anonymous key (optional if client provided or using .env)
             connection_string: PostgreSQL connection string for table creation (optional, only needed if auto_create_tables=True)
-            auto_create_tables: Whether to automatically create tables if they don't exist (default: False)
+            auto_create_tables: Whether to automatically create chat tables if they don't exist (default: False)
+            enable_facts: Whether to create facts-related tables (requires auto_create_tables=True) (default: False)
             load_from_env: Whether to load credentials from .env file (default: True)
 
         Raises:
@@ -91,13 +93,23 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             For first-time setup with auto_create_tables=True, you need to provide connection_string.
             This is only needed once to create the tables. After that, use normal supabase_url/supabase_key.
 
-            Example first-time setup:
+            Example first-time setup with chat only:
                 storage = ChatStorage.create(
                     "supabase",
                     supabase_url="https://your-project.supabase.co",
                     supabase_key="your-anon-key",
                     connection_string="postgresql://postgres:password@db.xxx.supabase.co:5432/postgres",
-                    auto_create_tables=True
+                    auto_create_tables=True,
+                )
+
+            Example first-time setup with facts enabled:
+                storage = ChatStorage.create(
+                    "supabase",
+                    supabase_url="https://your-project.supabase.co",
+                    supabase_key="your-anon-key",
+                    connection_string="postgresql://postgres:password@db.xxx.supabase.co:5432/postgres",
+                    auto_create_tables=True,
+                    enable_facts=True,
                 )
 
             Example normal usage (after tables exist):
@@ -157,7 +169,11 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                     "Get it from your Supabase project settings under Database > Connection string (Direct connection)."
                 )
             sql_dir = Path(__file__).parent / "supabase"
-            self._create_tables_with_psycopg2(connection_string, sql_dir)
+            self._create_tables_with_psycopg2(
+                connection_string=connection_string,
+                sql_dir=sql_dir,
+                enable_facts=enable_facts,
+            )
 
     def authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
         """
@@ -858,4 +874,169 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
 
         except Exception as e:
             logger.error(f"Error deleting fact {fact_id}: {e}")
+            return False
+
+    def check_processed_message(
+        self,
+        user_id: str,
+        message_id: str,
+    ) -> bool:
+        """
+        Check if a message has already been processed for fact extraction.
+
+        Args:
+            user_id: User identifier
+            message_id: Message identifier
+
+        Returns:
+            True if message has been processed, False otherwise
+        """
+        try:
+            result = (
+                self.client.table("processed_messages")
+                .select("id")
+                .eq("user_id", user_id)
+                .eq("message_id", message_id)
+                .limit(1)
+                .execute()
+            )
+
+            return bool(result.data)
+
+        except Exception as e:
+            logger.error(f"Error checking processed message {message_id}: {e}")
+            return False
+
+    def mark_processed_message(
+        self,
+        user_id: str,
+        message_id: str,
+        thread_id: str,
+    ) -> bool:
+        """
+        Mark a message as processed for fact extraction.
+
+        Args:
+            user_id: User identifier
+            message_id: Message identifier
+            thread_id: Thread identifier
+
+        Returns:
+            True if marked successfully, False otherwise
+        """
+        try:
+            result = (
+                self.client.table("processed_messages")
+                .insert(
+                    {
+                        "user_id": user_id,
+                        "message_id": message_id,
+                        "thread_id": thread_id,
+                    }
+                )
+                .execute()
+            )
+
+            if not result.data:
+                logger.warning(
+                    f"Failed to mark message {message_id} as processed for user {user_id}"
+                )
+                return False
+
+            logger.debug(f"Marked message {message_id} as processed")
+            return True
+
+        except Exception as e:
+            # If unique constraint violation, it's already processed - that's OK
+            if "duplicate key" in str(e).lower() or "unique" in str(e).lower():
+                logger.debug(f"Message {message_id} already marked as processed")
+                return True
+            logger.error(f"Error marking message {message_id} as processed: {e}")
+            return False
+
+    def check_processed_messages_batch(
+        self,
+        user_id: str,
+        message_ids: List[str],
+    ) -> List[str]:
+        """
+        Check which messages have already been processed (batch mode).
+
+        Args:
+            user_id: User identifier
+            message_ids: List of message identifiers to check
+
+        Returns:
+            List of message IDs that have been processed
+        """
+        if not message_ids:
+            return []
+
+        try:
+            result = (
+                self.client.table("processed_messages")
+                .select("message_id")
+                .eq("user_id", user_id)
+                .in_("message_id", message_ids)
+                .execute()
+            )
+
+            processed_ids = [row["message_id"] for row in result.data] if result.data else []
+            logger.debug(
+                f"Found {len(processed_ids)} processed messages out of {len(message_ids)}"
+            )
+            return processed_ids
+
+        except Exception as e:
+            logger.error(f"Error checking processed messages in batch: {e}")
+            return []
+
+    def mark_processed_messages_batch(
+        self,
+        user_id: str,
+        message_data: List[Dict[str, str]],
+    ) -> bool:
+        """
+        Mark multiple messages as processed (batch mode).
+
+        Args:
+            user_id: User identifier
+            message_data: List of dicts with 'message_id' and 'thread_id' keys
+
+        Returns:
+            True if all marked successfully, False otherwise
+        """
+        if not message_data:
+            return True
+
+        try:
+            # Prepare batch insert data
+            records = [
+                {
+                    "user_id": user_id,
+                    "message_id": item["message_id"],
+                    "thread_id": item["thread_id"],
+                }
+                for item in message_data
+            ]
+
+            result = self.client.table("processed_messages").insert(records).execute()
+
+            if not result.data:
+                logger.warning(
+                    f"Failed to mark {len(message_data)} messages as processed for user {user_id}"
+                )
+                return False
+
+            logger.debug(f"Marked {len(message_data)} messages as processed")
+            return True
+
+        except Exception as e:
+            # If unique constraint violation, some messages already processed - that's OK
+            if "duplicate key" in str(e).lower() or "unique" in str(e).lower():
+                logger.debug(
+                    "Some messages already marked as processed (duplicate key conflict)"
+                )
+                return True
+            logger.error(f"Error marking messages as processed in batch: {e}")
             return False
