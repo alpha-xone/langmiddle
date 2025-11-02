@@ -67,6 +67,26 @@ class FirebaseStorageBackend(ChatStorageBackend):
             logger.error(f"Failed to initialize Firebase: {e}")
             raise
 
+    def prepare_credentials(
+        self,
+        user_id: str,
+        auth_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Prepare Firebase-specific credentials.
+
+        Args:
+            user_id: User identifier
+            auth_token: Firebase ID token for authentication
+
+        Returns:
+            Dict with 'user_id' and 'id_token' keys
+        """
+        credentials = {"user_id": user_id}
+        if auth_token:
+            credentials["id_token"] = auth_token
+        return credentials
+
     def authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
         """
         Authenticate with Firebase using ID token.

@@ -92,6 +92,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
         token_counter: TokenCounter = count_tokens_approximately,
         model_kwargs: dict[str, Any] | None = None,
         embedder_kwargs: dict[str, Any] | None = None,
+        backend_kwargs: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the context engineer.
 
@@ -113,11 +114,11 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
         self.token_counter: TokenCounter = token_counter
 
         # Ensure valid backend and model configuration
-        if backend != "supabase":
+        if backend.lower() != "supabase":
             logger.warning(f"Invalid backend: {backend}. Using default backend 'supabase'.")
             backend = "supabase"
 
-        self.backend: str = backend
+        self.backend: str = backend.lower()
 
         self.extraction_prompt = extraction_prompt
         self.update_prompt = update_prompt
@@ -161,7 +162,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
         if self.model is not None and self.embedder is not None:
             try:
                 # For now, we don't pass credentials here - they'll be provided per-request
-                self.storage = ChatStorage.create(backend)
+                self.storage = ChatStorage.create(backend, **(backend_kwargs or {}))
                 logger.debug(f"Initialized storage backend: {backend}")
             except Exception as e:
                 logger.error(f"Failed to initialize storage backend '{backend}': {e}")
@@ -367,6 +368,16 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
         auth_token: str | None = getattr(runtime.context, "auth_token", None)
 
         if not user_id:
+            if self.backend == "supabase":
+                user_id = self.storage.backend.extract_user_id(
+                    {"jwt_token": auth_token} if auth_token else {}
+                )
+            if self.backend == "firebase":
+                user_id = self.storage.backend.extract_user_id(
+                    {"id_token": auth_token} if auth_token else {}
+                )
+
+        if not user_id:
             log_msg = "[after_agent] Missing user_id in context; cannot extract facts"
             if log_msg not in self._logged_messages:
                 self._logged_messages.add(log_msg)
@@ -375,10 +386,10 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
 
         # Authenticate with storage backend
         try:
-            credentials = {"user_id": user_id}
-            if auth_token:
-                credentials["jwt_token"] = auth_token
-
+            credentials = self.storage.backend.prepare_credentials(
+                user_id=user_id,
+                auth_token=auth_token,
+            )
             self.storage.backend.authenticate(credentials)
         except Exception as e:
             logger.error(f"Authentication failed: {e}")

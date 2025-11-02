@@ -22,6 +22,29 @@ class ChatStorageBackend(ABC):
     # Role mapping for database storage
     TYPE_TO_ROLE = {"human": "user", "ai": "assistant"}
 
+    def prepare_credentials(
+        self,
+        user_id: str,
+        auth_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Prepare credentials dictionary for this backend.
+
+        Subclasses should override this to define their specific credential format.
+        Default implementation provides basic user_id credential.
+
+        Args:
+            user_id: User identifier
+            auth_token: Optional authentication token (JWT, Firebase ID token, etc.)
+
+        Returns:
+            Dict with backend-specific credential keys
+        """
+        credentials = {"user_id": user_id}
+        if auth_token:
+            credentials["auth_token"] = auth_token
+        return credentials
+
     @abstractmethod
     def authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
         """

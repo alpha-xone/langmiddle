@@ -12,17 +12,19 @@ Middlewares for LangChain / LangGraph
 Production-ready middleware for **LangChain** and **LangGraph v1** with multi-backend chat history persistence. Store conversations in SQLite, Supabase, or Firebase with zero configuration required.
 
 **Key Features:**
-- ✅ **LangChain/LangGraph v1 Compatible**: Native middleware pattern support
+- ✅ **LangChain / LangGraph v1 Compatible**: Native middleware pattern support
 - ⚡ **Zero Config Start**: Defaults to in-memory SQLite—no setup needed
 - 🔄 **Multi-Backend Storage**: Switch between SQLite, PostgreSQL, Supabase, Firebase with one parameter
 - 🔒 **Production Ready**: JWT authentication, RLS support, type-safe
+ - 🧠 **Context Engineering**: Built-in support for long-term facts, semantic memories, and context management
 
 ## Available middleware
 
-| Middleware | Description |
-|---|---|
-| ToolRemover | Removes tool-related messages from the conversation state (pre/post agent). |
-| ChatSaver | Persists chat history to configurable backends (SQLite, Postgres, Supabase, Firebase). |
+| Middleware | Description | Supported Backends |
+|---|---|---|
+| ToolRemover | Removes tool-related messages from the conversation state (pre/post agent). | N/A (no backend needed) |
+| ChatSaver | Persists chat histories | SQLite ✅, PostgreSQL ✅, Supabase ✅, Firebase ✅ |
+| ContextEngineer | Auto context management with semantic memories | SQLite ✅, PostgreSQL ✅, Supabase ✅, Firebase ✅ |
 
 ## Installation
 
@@ -68,6 +70,41 @@ agent.invoke(
         "user_id": "user-123",
         "session_id": "session-123",
     }
+)
+```
+
+## ContextEngineer
+
+ContextEngineer provides automatic context and memory management for conversations. It can store, retrieve, and query long-term facts (semantic memories) using the project's supported storage backends.
+
+```python
+from langchain.chat_models import init_chat_model
+from langchain.embeddings import init_embeddings
+from langmiddle.context import ContextEngineer
+
+# Initialize model and embedder
+llm = init_chat_model("gpt-4o")
+embedder = init_embeddings("text-embedding-3-small")
+
+# When running for **the first time**, create databases in the backend
+store = ChatStorage.create(
+    "supabase",
+    auto_create_tables=True,
+    enable_facts=True,
+)
+
+# Use in your agent
+agent = create_agent(
+    model="gpt-4o",
+    tools=[],
+    middleware=[
+        ContextEngineer(
+            model=llm,
+            embedder=embedder,
+            backend="supabase",
+            backend_kwargs={'enable_facts': True},
+        ),
+    ],
 )
 ```
 

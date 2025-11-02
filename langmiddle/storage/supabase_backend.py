@@ -175,6 +175,26 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 enable_facts=enable_facts,
             )
 
+    def prepare_credentials(
+        self,
+        user_id: str,
+        auth_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Prepare Supabase-specific credentials.
+
+        Args:
+            user_id: User identifier
+            auth_token: JWT token for RLS authentication
+
+        Returns:
+            Dict with 'user_id' and 'jwt_token' keys
+        """
+        credentials = {"user_id": user_id}
+        if auth_token:
+            credentials["jwt_token"] = auth_token
+        return credentials
+
     def authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
         """
         Authenticate with Supabase using JWT.
