@@ -71,6 +71,15 @@ class ChatStorageBackend(ABC):
         """
         pass
 
+    def invalidate_session(self) -> None:
+        """
+        Invalidate any cached session data.
+
+        Call this when you want to force re-authentication on the next operation.
+        Default implementation is a no-op for backends without session caching.
+        """
+        pass
+
     @abstractmethod
     def get_existing_message_ids(self, thread_id: str) -> set:
         """
@@ -101,6 +110,7 @@ class ChatStorageBackend(ABC):
     @abstractmethod
     def save_messages(
         self,
+        credentials: Optional[Dict[str, Any]],
         thread_id: str,
         user_id: str,
         messages: List[AnyMessage],
@@ -110,6 +120,7 @@ class ChatStorageBackend(ABC):
         Save messages to storage.
 
         Args:
+            credentials: Optional authentication credentials (required for RLS-enabled backends)
             thread_id: Thread identifier
             user_id: User identifier
             messages: List of messages to save
@@ -123,6 +134,7 @@ class ChatStorageBackend(ABC):
     @abstractmethod
     def get_thread(
         self,
+        credentials: Optional[Dict[str, Any]],
         thread_id: str,
     ) -> dict | None:
         """

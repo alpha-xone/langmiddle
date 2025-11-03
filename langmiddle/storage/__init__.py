@@ -119,17 +119,7 @@ class ChatStorage:
                 "saved_msg_ids": saved_msg_ids or set(),
             }
 
-        # Authenticate with backend
-        if not self.backend.authenticate(credentials):
-            return {
-                "success": False,
-                "saved_count": 0,
-                "errors": ["Authentication failed"],
-                "user_id": user_id,
-                "saved_msg_ids": saved_msg_ids or set(),
-            }
-
-        # Extract user ID if not provided
+        # Extract user_id if not provided
         if not user_id:
             user_id = self.backend.extract_user_id(credentials)
 
@@ -175,8 +165,9 @@ class ChatStorage:
                 "saved_msg_ids": saved_msg_ids,
             }
 
-        # Save messages
+        # Save messages via backend (passes credentials internally if supported)
         result = self.backend.save_messages(
+            credentials=credentials,
             thread_id=thread_id,
             user_id=user_id,
             messages=new_messages,
@@ -216,12 +207,11 @@ class ChatStorage:
         Returns:
             dict: The thread matching the thread_id, or None if not found.
         """
-        # Authenticate with backend
-        if not self.backend.authenticate(credentials):
-            logger.error(f"Authentication failed with credentials: {credentials}")
-            return None
-
-        return self.backend.get_thread(thread_id)
+        # Pass credentials to backend - backends with auth will use decorator
+        return self.backend.get_thread(
+            credentials=credentials,
+            thread_id=thread_id,
+        )
 
     def search_threads(
         self,
@@ -865,3 +855,29 @@ class ChatStorage:
             return None
 
         return self.backend.get_fact_change_stats(user_id=user_id)
+
+    def invalidate_session(self) -> None:
+        """
+        Invalidate any cached session data (JWT tokens, user_id, etc.).
+
+        Call this when you want to force re-authentication on the next operation,
+        for example:
+        - When switching between different users
+        - After obtaining a new JWT token (e.g., after refresh)
+        - When you want to ensure fresh authentication
+
+        Example:
+            ```python
+            storage = ChatStorage.create("supabase", ...)
+
+            # Use with first user
+            credentials1 = storage.backend.prepare_credentials("user1", jwt1)
+            storage.save_chat_history(thread_id, credentials1, messages)
+
+            # Switch to different user - invalidate cached session
+            storage.invalidate_session()
+            credentials2 = storage.backend.prepare_credentials("user2", jwt2)
+            storage.save_chat_history(thread_id, credentials2, messages)
+            ```
+        """
+        self.backend.invalidate_session()

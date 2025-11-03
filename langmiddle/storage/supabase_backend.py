@@ -4,10 +4,11 @@ Supabase storage backend implementation.
 This module provides Supabase-specific implementation of the chat storage interface.
 """
 
+import functools
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from jose import JWTError, jwt
 from langchain_core.messages import AnyMessage
@@ -19,6 +20,55 @@ from .postgres_base import PostgreSQLBaseBackend
 logger = get_graph_logger(__name__)
 
 __all__ = ["SupabaseStorageBackend"]
+
+
+def require_auth(func: Callable) -> Callable:
+    """
+    Decorator to handle authentication for Supabase operations.
+
+    This decorator:
+    1. Extracts credentials from method arguments
+    2. Authenticates with Supabase before operation (stateless)
+    3. Logs authentication failures
+    4. Returns error result if authentication fails
+
+    Note: This decorator does NOT mutate instance state to ensure thread safety.
+
+    Args:
+        func: Method to wrap with authentication
+
+    Returns:
+        Wrapped method that handles authentication
+    """
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        # Extract credentials - look for 'credentials' in kwargs or as first positional arg
+        credentials = kwargs.get('credentials')
+        if credentials is None and args:
+            # Check if first arg looks like credentials dict
+            if isinstance(args[0], dict) and ('jwt_token' in args[0] or 'user_id' in args[0]):
+                credentials = args[0]
+
+        # Authenticate (stateless - only sets JWT on client, no instance mutation)
+        if credentials:
+            auth_success = self._authenticate_request(credentials)
+            if not auth_success:
+                logger.error(f"Authentication failed for {func.__name__}")
+                # Return appropriate error based on return type
+                return_annotation = func.__annotations__.get('return', None)
+                if return_annotation == bool:
+                    return False
+                elif return_annotation == dict or 'Dict' in str(return_annotation):
+                    return {"success": False, "error": "Authentication failed"}
+                elif return_annotation == list or 'List' in str(return_annotation):
+                    return []
+                else:
+                    return None
+
+        # Execute the actual method
+        return func(self, *args, **kwargs)
+
+    return wrapper
 
 
 def thread_to_dict(thread: dict, messages: List[dict]) -> dict:
@@ -72,6 +122,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         auto_create_tables: bool = False,
         enable_facts: bool = False,
         load_from_env: bool = True,
+        user_id: Optional[str] = None,
+        credentials: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize Supabase storage backend.
@@ -84,6 +136,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             auto_create_tables: Whether to automatically create chat tables if they don't exist (default: False)
             enable_facts: Whether to create facts-related tables (requires auto_create_tables=True) (default: False)
             load_from_env: Whether to load credentials from .env file (default: True)
+            user_id: Optional user_id to store at instance level (can also be set later via set_user)
+            credentials: Optional credentials to authenticate on init (can also be set later via set_user)
 
         Raises:
             ImportError: If Supabase dependencies are not installed
@@ -114,10 +168,16 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
 
             Example normal usage (after tables exist):
                 storage = ChatStorage.create("supabase")  # Loads from .env
+
+            Example with user context:
+                storage = ChatStorage.create(
+                    "supabase",
+                    user_id="user123",
+                    credentials={"jwt_token": "eyJhbGc..."}
+                )
         """
         if client:
             self.client = client
-            self._authenticated = False
             return
 
         # Try to import Supabase
@@ -155,7 +215,6 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         # Create Supabase client
         try:
             self.client = create_client(supabase_url, supabase_key)
-            self._authenticated = False
             logger.debug("Supabase client initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize Supabase client: {e}")
@@ -195,9 +254,12 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             credentials["jwt_token"] = auth_token
         return credentials
 
-    def authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
+    def _authenticate_request(self, credentials: Optional[Dict[str, Any]]) -> bool:
         """
-        Authenticate with Supabase using JWT.
+        Authenticate a single request with Supabase using JWT.
+
+        THREAD-SAFE: Does not mutate instance state, only sets JWT on client.
+        Each request authenticates independently.
 
         Args:
             credentials: Dict containing 'jwt_token' key
@@ -211,17 +273,37 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             return True  # Allow non-RLS access
 
         try:
+            # Set JWT on client - Supabase validates on each request
             self.client.postgrest.auth(jwt_token)
-            self._authenticated = True
-            logger.debug("Successfully authenticated with Supabase")
+            logger.debug("JWT token set on Supabase client")
             return True
         except Exception as e:
-            logger.error(f"Supabase authentication failed: {e}")
+            logger.error(f"Failed to set JWT on Supabase client: {e}")
             return False
+
+    def authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
+        """
+        Authenticate with Supabase using JWT.
+
+        Wrapper for backward compatibility. Use _authenticate_request internally.
+
+        Args:
+            credentials: Dict containing 'jwt_token' key
+
+        Returns:
+            True if authentication successful or not required
+        """
+        return self._authenticate_request(credentials)
 
     def extract_user_id(self, credentials: Optional[Dict[str, Any]]) -> Optional[str]:
         """
-        Extract user ID from JWT token or direct user_id.
+        Extract user ID from credentials.
+
+        THREAD-SAFE: Pure function, no instance state mutation.
+
+        Priority:
+        1. Direct 'user_id' in credentials
+        2. Extract from JWT 'sub' claim
 
         Args:
             credentials: Dict containing 'jwt_token' and/or 'user_id'
@@ -229,13 +311,16 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Returns:
             User ID if found, None otherwise
         """
-        # Check for direct user_id first
-        user_id = credentials.get("user_id") if credentials else None
+        if not credentials:
+            return None
+
+        # 1. Direct user_id in credentials
+        user_id = credentials.get("user_id")
         if user_id:
             return user_id
 
-        # Extract from JWT token
-        jwt_token = credentials.get("jwt_token") if credentials else None
+        # 2. Extract from JWT token
+        jwt_token = credentials.get("jwt_token")
         if not jwt_token:
             return None
 
@@ -354,25 +439,33 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             logger.error(f"Error upserting chat thread: {e}")
             return False
 
+    @require_auth
     def save_messages(
         self,
+        credentials: Optional[Dict[str, Any]],
         thread_id: str,
-        user_id: str,
         messages: List[AnyMessage],
+        user_id: Optional[str] = None,
         custom_state: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Save messages to Supabase.
 
         Args:
+            credentials: Authentication credentials
             thread_id: Thread identifier
-            user_id: User identifier
             messages: List of messages to save
+            user_id: Optional user ID (extracted from credentials if not provided)
             custom_state: Optional custom state defined in the graph
 
         Returns:
             Dict with 'saved_count' and 'errors' keys
         """
+        # Extract user_id from credentials if not provided
+        user_id = user_id or self.extract_user_id(credentials)
+        if not user_id:
+            return {"saved_count": 0, "errors": ["user_id required"]}
+
         saved_count = 0
         errors = []
 
@@ -385,7 +478,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             try:
                 self.client.table("chat_threads").update(
                     {"custom_state": custom_state}
-                ).eq("id", thread_id).execute()
+                ).eq("id", thread_id).eq("user_id", user_id).execute()
             except Exception as e:
                 errors.append(f"Failed to update custom_state for thread {thread_id}: {e}")
 
@@ -402,14 +495,15 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                     "usage_metadata": getattr(msg, "usage_metadata", {}),
                 }
 
-                # Save to database
+                # Save to database - let DB handle timestamps
                 result = (
                     self.client.table("chat_messages")
                     .upsert(msg_data, on_conflict="id")
                     .execute()
                 )
 
-                time.sleep(0.05)  # Small delay to avoid duplicated time
+                # Small delay to ensure timestamps are different when messages arrive rapidly
+                time.sleep(0.01)
 
                 if not result.data:
                     errors.append(f"Failed to save message {msg.id}")
@@ -424,23 +518,35 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
 
         return {"saved_count": saved_count, "errors": errors}
 
+    @require_auth
     def get_thread(
         self,
+        credentials: Optional[Dict[str, Any]],
         thread_id: str,
+        user_id: Optional[str] = None,
     ) -> dict | None:
         """
         Get a thread by ID.
 
         Args:
+            credentials: Authentication credentials
             thread_id: The ID of the thread to get.
+            user_id: Optional user ID (extracted from credentials if not provided)
         """
-        # Fetch thread record
+        # Extract user_id from credentials if not provided
+        user_id = user_id or self.extract_user_id(credentials)
+        if not user_id:
+            logger.error("user_id required for get_thread")
+            return None
+
+        # Fetch thread record - explicit tenant filtering
         try:
             thread = (
                 self.client
                 .table("chat_threads")
                 .select("*")
                 .eq("id", thread_id)
+                .eq("user_id", user_id)  # Defense in depth: explicit tenant filter
                 .execute()
             )
         except Exception as e:
@@ -457,6 +563,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 .table("chat_messages")
                 .select("*")
                 .eq("thread_id", thread_id)
+                .eq("user_id", user_id)  # Defense in depth: explicit tenant filter
                 .order("created_at", desc=False)
                 .execute()
             )
@@ -471,9 +578,12 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             logger.error(f"Error building thread dict for id {thread_id}: {e}")
             return None
 
+    @require_auth
     def search_threads(
         self,
+        credentials: Optional[Dict[str, Any]],
         *,
+        user_id: Optional[str] = None,
         metadata: dict | None = None,
         values: dict | None = None,
         ids: List[str] | None = None,
@@ -486,6 +596,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Search for threads.
 
         Args:
+            credentials: Authentication credentials
+            user_id: Optional user ID (extracted from credentials if not provided)
             metadata: Thread metadata to filter on.
             values: State values to filter on.
             ids: List of thread IDs to filter by.
@@ -493,17 +605,23 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             offset: Offset in threads table to start search from.
             sort_by: Sort by field.
             sort_order: Sort order.
-            headers: Optional custom headers to include with the request.
 
         Returns:
             list[dict]: List of the threads matching the search parameters.
         """
+        # Extract user_id from credentials if not provided
+        user_id = user_id or self.extract_user_id(credentials)
+        if not user_id:
+            logger.error("user_id required for search_threads")
+            return []
+
         # Build and execute threads query
         try:
             query = (
                 self.client
                 .table("chat_threads")
                 .select("*")
+                .eq("user_id", user_id)  # Defense in depth: explicit tenant filter
             )
 
             if ids:
@@ -538,6 +656,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 .table("chat_messages")
                 .select("*")
                 .in_("thread_id", thread_ids)
+                .eq("user_id", user_id)  # Defense in depth: explicit tenant filter
                 .order("created_at", desc=False)
                 .execute()
             )
@@ -555,31 +674,43 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             logger.error(f"Error building thread dicts from results: {e}")
             return []
 
+    @require_auth
     def delete_thread(
         self,
+        credentials: Optional[Dict[str, Any]],
         thread_id: str,
+        user_id: Optional[str] = None,
     ):
         """
         Delete a thread.
 
         Args:
+            credentials: Authentication credentials
             thread_id: The ID of the thread to delete.
+            user_id: Optional user ID (extracted from credentials if not provided)
 
         Returns:
             None
         """
+        # Extract user_id from credentials if not provided
+        user_id = user_id or self.extract_user_id(credentials)
+        if not user_id:
+            logger.error("user_id required for delete_thread")
+            return
+
         try:
             result = (
                 self.client
                 .table("chat_threads")
                 .delete()
                 .eq("id", thread_id)
+                .eq("user_id", user_id)  # Defense in depth: explicit tenant filter
                 .execute()
             )
             logger.info(str(result.data))
 
         except Exception as e:
-            logger.error(f"Error retrieving threads: {e}")
+            logger.error(f"Error deleting thread: {e}")
 
     # =========================================================================
     # Facts Management Methods
@@ -610,10 +741,12 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             logger.error(f"Error creating/checking embedding table for dimension {dimension}: {e}")
             return False
 
+    @require_auth
     def insert_facts(
         self,
-        user_id: str,
-        facts: Sequence[Dict[str, Any] | str],
+        credentials: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
+        facts: Optional[Sequence[Dict[str, Any] | str]] = None,
         embeddings: Optional[List[List[float]]] = None,
         model_dimension: Optional[int] = None,
     ) -> Dict[str, Any]:
@@ -621,7 +754,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Insert facts with optional embeddings into storage.
 
         Args:
-            user_id: User identifier
+            credentials: Optional authentication credentials (not needed if set_user was called)
+            user_id: Optional user identifier (uses instance-level user_id if not provided)
             facts: List of facts. Each fact can be either:
                 - A string (auto-converted to fact dictionary)
                 - A dictionary with keys: content, namespace, language, intensity, confidence
@@ -738,8 +872,10 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             "errors": errors
         }
 
+    @require_auth
     def query_facts(
         self,
+        credentials: Optional[Dict[str, Any]],
         query_embedding: List[float],
         user_id: str,
         model_dimension: int,
@@ -751,6 +887,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Query facts using vector similarity search.
 
         Args:
+            credentials: Authentication credentials
             query_embedding: Query vector for similarity search
             user_id: User identifier for filtering
             model_dimension: Dimension of the embedding model
@@ -791,8 +928,10 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             logger.error(f"Error querying facts: {e}")
             return []
 
+    @require_auth
     def get_fact_by_id(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
     ) -> Optional[Dict[str, Any]]:
@@ -800,6 +939,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Get a fact by its ID.
 
         Args:
+            credentials: Authentication credentials
             fact_id: Fact identifier
             user_id: User identifier for authorization
 
@@ -825,8 +965,10 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             logger.error(f"Error getting fact {fact_id}: {e}")
             return None
 
+    @require_auth
     def update_fact(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
         updates: Dict[str, Any],
@@ -836,6 +978,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Update a fact's content and/or metadata.
 
         Args:
+            credentials: Authentication credentials
             fact_id: Fact identifier
             user_id: User identifier for authorization
             updates: Dictionary of fields to update (content, namespace, intensity, confidence, etc.)
@@ -892,8 +1035,10 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             logger.error(f"Error updating fact {fact_id}: {e}")
             return False
 
+    @require_auth
     def delete_fact(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
     ) -> bool:
@@ -901,6 +1046,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Delete a fact and its embeddings.
 
         Args:
+            credentials: Authentication credentials
             fact_id: Fact identifier
             user_id: User identifier for authorization
 
@@ -928,8 +1074,10 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             logger.error(f"Error deleting fact {fact_id}: {e}")
             return False
 
+    @require_auth
     def check_processed_message(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_id: str,
     ) -> bool:
@@ -937,6 +1085,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Check if a message has already been processed for fact extraction.
 
         Args:
+            credentials: Authentication credentials
             user_id: User identifier
             message_id: Message identifier
 
@@ -959,8 +1108,10 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             logger.error(f"Error checking processed message {message_id}: {e}")
             return False
 
+    @require_auth
     def mark_processed_message(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_id: str,
         thread_id: str,
@@ -969,6 +1120,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Mark a message as processed for fact extraction.
 
         Args:
+            credentials: Authentication credentials
             user_id: User identifier
             message_id: Message identifier
             thread_id: Thread identifier
@@ -1006,8 +1158,10 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             logger.error(f"Error marking message {message_id} as processed: {e}")
             return False
 
+    @require_auth
     def check_processed_messages_batch(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_ids: List[str],
     ) -> List[str]:
@@ -1015,6 +1169,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Check which messages have already been processed (batch mode).
 
         Args:
+            credentials: Authentication credentials
             user_id: User identifier
             message_ids: List of message identifiers to check
 
@@ -1043,8 +1198,10 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             logger.error(f"Error checking processed messages in batch: {e}")
             return []
 
+    @require_auth
     def mark_processed_messages_batch(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_data: List[Dict[str, str]],
     ) -> bool:
@@ -1052,6 +1209,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Mark multiple messages as processed (batch mode).
 
         Args:
+            credentials: Authentication credentials
             user_id: User identifier
             message_data: List of dicts with 'message_id' and 'thread_id' keys
 
@@ -1097,8 +1255,10 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     # Fact History Methods
     # =========================================================================
 
+    @require_auth
     def get_fact_history(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
     ) -> List[Dict[str, Any]]:
@@ -1106,6 +1266,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Get complete history for a specific fact.
 
         Args:
+            credentials: Authentication credentials
             fact_id: Fact identifier
             user_id: User identifier for authorization
 
@@ -1129,8 +1290,10 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             logger.error(f"Error getting fact history for {fact_id}: {e}")
             return []
 
+    @require_auth
     def get_recent_fact_changes(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         limit: int = 50,
         operation: Optional[str] = None,
@@ -1139,6 +1302,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Get recent fact changes for a user.
 
         Args:
+            credentials: Authentication credentials
             user_id: User identifier
             limit: Maximum number of records to return
             operation: Optional filter by operation type ('INSERT', 'UPDATE', 'DELETE')
@@ -1167,14 +1331,17 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             logger.error(f"Error getting recent fact changes for user {user_id}: {e}")
             return []
 
+    @require_auth
     def get_fact_change_stats(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
     ) -> Optional[Dict[str, Any]]:
         """
         Get statistics about fact changes for a user.
 
         Args:
+            credentials: Authentication credentials
             user_id: User identifier
 
         Returns:

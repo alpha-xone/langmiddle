@@ -203,11 +203,32 @@ create trigger track_fact_changes_trigger
 -- ==========================================================
 alter table public.fact_history enable row level security;
 
+-- Allow users to view their own fact history
 drop policy if exists "users_view_own_fact_history" on public.fact_history;
 create policy "users_view_own_fact_history"
   on public.fact_history
   for select
   using (auth.uid() = user_id);
+
+-- Allow trigger to insert history records (runs as security definer, but explicit is better)
+drop policy if exists "system_insert_fact_history" on public.fact_history;
+create policy "system_insert_fact_history"
+  on public.fact_history
+  for insert
+  with check (true);  -- Trigger validates user_id matches fact owner
+
+-- Prevent any updates or deletes (append-only audit log)
+drop policy if exists "prevent_history_modifications" on public.fact_history;
+create policy "prevent_history_modifications"
+  on public.fact_history
+  for update
+  using (false);
+
+drop policy if exists "prevent_history_deletes" on public.fact_history;
+create policy "prevent_history_deletes"
+  on public.fact_history
+  for delete
+  using (false);
 
 -- ==========================================================
 -- HELPER FUNCTIONS: Query fact history

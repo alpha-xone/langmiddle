@@ -64,8 +64,8 @@ def extract_facts(
 
 def query_existing_facts(
     storage_backend: "ChatStorageBackend",
+    credentials: dict[str, Any],
     embedder: Embeddings,
-    user_id: str,
     new_facts: list[dict],
     embeddings_cache: dict[str, list[float]] | None = None,
 ) -> list[dict]:
@@ -79,8 +79,8 @@ def query_existing_facts(
 
     Args:
         storage_backend: Storage backend instance with query_facts method
+        credentials: Credentials for storage backend
         embedder: Embeddings model for generating vectors
-        user_id: User identifier
         new_facts: List of newly extracted facts
         embeddings_cache: Optional dict mapping content strings to pre-computed embedding vectors.
                           Only missing embeddings will be generated.
@@ -146,8 +146,8 @@ def query_existing_facts(
                     fact_namespace_filters.append(new_namespace[:i])
 
                 results = storage_backend.query_facts(
+                    credentials=credentials,
                     query_embedding=embedding,
-                    user_id=user_id,
                     model_dimension=model_dimension,
                     match_threshold=0.75,  # Moderate threshold for updates
                     match_count=5,  # Get top 5 similar facts
@@ -164,8 +164,8 @@ def query_existing_facts(
             # Strategy 2: Query without namespace filter (broader search)
             # This catches facts that might be in wrong namespaces or need updating
             results = storage_backend.query_facts(
+                credentials=credentials,
                 query_embedding=embedding,
-                user_id=user_id,
                 model_dimension=model_dimension,
                 match_threshold=0.80,  # Slightly higher threshold for non-namespace matches
                 match_count=3,  # Fewer results without namespace filter

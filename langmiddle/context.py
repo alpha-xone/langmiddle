@@ -20,7 +20,8 @@ from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, AgentState
-from langchain.chat_models import BaseChatModel, init_chat_model
+from langchain_core.language_models import BaseChatModel
+from langchain.chat_models import init_chat_model
 from langchain.embeddings import Embeddings, init_embeddings
 from langchain_core.messages import (
     AnyMessage,
@@ -119,6 +120,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
             backend = "supabase"
 
         self.backend: str = backend.lower()
+        self.user_id: str = ""
 
         self.extraction_prompt = extraction_prompt
         self.update_prompt = update_prompt
