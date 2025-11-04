@@ -223,6 +223,7 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def get_thread(
         self,
+        credentials: Optional[Dict[str, Any]],
         thread_id: str,
     ) -> dict | None:
         """
@@ -460,6 +461,7 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def update_fact(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
         updates: Dict[str, Any],
@@ -473,6 +475,7 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def query_facts(
         self,
+        credentials: Optional[Dict[str, Any]],
         query_embedding: List[float],
         user_id: str,
         model_dimension: int,
@@ -488,6 +491,7 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def get_fact_by_id(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
     ) -> Optional[Dict[str, Any]]:
@@ -499,6 +503,7 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def delete_fact(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
     ) -> bool:
@@ -510,6 +515,7 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def check_processed_message(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_id: str,
     ) -> bool:
@@ -521,6 +527,7 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def mark_processed_message(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_id: str,
         thread_id: str,
@@ -533,6 +540,7 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def check_processed_messages_batch(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_ids: List[str],
     ) -> List[str]:
@@ -544,6 +552,7 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def mark_processed_messages_batch(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_data: List[Dict[str, str]],
     ) -> bool:

@@ -1,11 +1,12 @@
-# langmiddle
+# 🧩 LangMiddle — Composable Middlewares for LangGraph
 
-Middlewares for LangChain / LangGraph
+> Lightweight, plug‑and‑play middlewares for LangGraph developers.
 
 [![CI](https://github.com/alpha-xone/langmiddle/actions/workflows/ci.yml/badge.svg)](https://github.com/alpha-xone/langmiddle/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/langmiddle.svg)](https://pypi.org/project/langmiddle/)
 [![Python versions](https://img.shields.io/pypi/pyversions/langmiddle.svg)](https://pypi.org/project/langmiddle/)
 [![License](https://img.shields.io/github/license/alpha-xone/langmiddle.svg)](https://github.com/alpha-xone/langmiddle/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/alpha-xone/langmiddle?style=social)](https://github.com/alpha-xone/langmiddle)
 
 ## Overview
 
@@ -24,7 +25,7 @@ Production-ready middleware for **LangChain** and **LangGraph v1** with multi-ba
 |---|---|---|
 | ToolRemover | Removes tool-related messages from the conversation state (pre/post agent). | N/A (no backend needed) |
 | ChatSaver | Persists chat histories | SQLite ✅, PostgreSQL ✅, Supabase ✅, Firebase ✅ |
-| ContextEngineer | Auto context management with semantic memories | Supabase ✅ |
+| ContextEngineer | Auto context management with semantic memories | Supabase 🚧 (in progress) |
 
 ## Installation
 
@@ -173,3 +174,13 @@ backend_type="firebase", credentials_path="./firebase-creds.json"
 
 # Or use GOOGLE_APPLICATION_CREDENTIALS environment variable
 ```
+
+---
+
+## Contributing
+
+We welcome contributions! If LangMiddle helped you, please ⭐️ the repo to help others discover it.
+
+## License
+
+Apache License 2.0 - see [LICENSE](LICENSE) for details.

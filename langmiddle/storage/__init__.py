@@ -410,6 +410,7 @@ class ChatStorage:
                     }
 
         return self.backend.insert_facts(
+            credentials=credentials,
             user_id=user_id,
             facts=facts_dicts,
             embeddings=embeddings,
@@ -466,6 +467,7 @@ class ChatStorage:
             return []
 
         return self.backend.query_facts(
+            credentials=credentials,
             query_embedding=query_embedding,
             user_id=user_id,
             model_dimension=model_dimension,
@@ -503,7 +505,11 @@ class ChatStorage:
             logger.error("Could not determine user_id for get_fact_by_id")
             return None
 
-        return self.backend.get_fact_by_id(fact_id=fact_id, user_id=user_id)
+        return self.backend.get_fact_by_id(
+            credentials=credentials,
+            fact_id=fact_id,
+            user_id=user_id,
+        )
 
     def update_fact(
         self,
@@ -550,7 +556,11 @@ class ChatStorage:
                 return False
 
             # Get the existing fact to verify dimension matches
-            existing_fact = self.backend.get_fact_by_id(fact_id=fact_id, user_id=user_id)
+            existing_fact = self.backend.get_fact_by_id(
+                credentials=credentials,
+                fact_id=fact_id,
+                user_id=user_id,
+            )
             if existing_fact and "model_dimension" in existing_fact:
                 expected_dimension = existing_fact["model_dimension"]
                 if len(embedding) != expected_dimension:
@@ -561,6 +571,7 @@ class ChatStorage:
                     return False
 
         return self.backend.update_fact(
+            credentials=credentials,
             fact_id=fact_id,
             user_id=user_id,
             updates=updates,
@@ -596,7 +607,11 @@ class ChatStorage:
             logger.error("Could not determine user_id for delete_fact")
             return False
 
-        return self.backend.delete_fact(fact_id=fact_id, user_id=user_id)
+        return self.backend.delete_fact(
+            credentials=credentials,
+            fact_id=fact_id,
+            user_id=user_id,
+        )
 
     # =========================================================================
     # Processed Messages Tracking
@@ -632,7 +647,9 @@ class ChatStorage:
             return False
 
         return self.backend.check_processed_message(
-            user_id=user_id, message_id=message_id
+            credentials=credentials,
+            user_id=user_id,
+            message_id=message_id,
         )
 
     def mark_processed_message(
@@ -667,7 +684,10 @@ class ChatStorage:
             return False
 
         return self.backend.mark_processed_message(
-            user_id=user_id, message_id=message_id, thread_id=thread_id
+            credentials=credentials,
+            user_id=user_id,
+            message_id=message_id,
+            thread_id=thread_id,
         )
 
     def check_processed_messages_batch(
@@ -700,7 +720,9 @@ class ChatStorage:
             return []
 
         return self.backend.check_processed_messages_batch(
-            user_id=user_id, message_ids=message_ids
+            credentials=credentials,
+            user_id=user_id,
+            message_ids=message_ids,
         )
 
     def mark_processed_messages_batch(
@@ -733,7 +755,9 @@ class ChatStorage:
             return False
 
         return self.backend.mark_processed_messages_batch(
-            user_id=user_id, message_data=message_data
+            credentials=credentials,
+            user_id=user_id,
+            message_data=message_data,
         )
 
     # =========================================================================
@@ -774,7 +798,11 @@ class ChatStorage:
             logger.warning(f"Backend {type(self.backend).__name__} does not support fact history")
             return []
 
-        return self.backend.get_fact_history(fact_id=fact_id, user_id=user_id)
+        return self.backend.get_fact_history(
+            credentials=credentials,
+            fact_id=fact_id,
+            user_id=user_id,
+        )
 
     def get_recent_fact_changes(
         self,
@@ -813,7 +841,10 @@ class ChatStorage:
             return []
 
         return self.backend.get_recent_fact_changes(
-            user_id=user_id, limit=limit, operation=operation
+            credentials=credentials,
+            user_id=user_id,
+            limit=limit,
+            operation=operation,
         )
 
     def get_fact_change_stats(
@@ -854,7 +885,10 @@ class ChatStorage:
             logger.warning(f"Backend {type(self.backend).__name__} does not support fact history")
             return None
 
-        return self.backend.get_fact_change_stats(user_id=user_id)
+        return self.backend.get_fact_change_stats(
+            credentials=credentials,
+            user_id=user_id,
+        )
 
     def invalidate_session(self) -> None:
         """

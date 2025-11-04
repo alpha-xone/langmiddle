@@ -405,6 +405,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def save_messages(
         self,
+        credentials: Optional[Dict[str, Any]],
         thread_id: str,
         user_id: str,
         messages: List[AnyMessage],
@@ -501,6 +502,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def insert_facts(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         facts: Sequence[Dict[str, Any] | str],
         embeddings: Optional[List[List[float]]] = None,
@@ -518,6 +520,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def query_facts(
         self,
+        credentials: Optional[Dict[str, Any]],
         query_embedding: List[float],
         user_id: str,
         model_dimension: int,
@@ -533,6 +536,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def get_fact_by_id(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
     ) -> Optional[Dict[str, Any]]:
@@ -544,6 +548,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def update_fact(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
         updates: Dict[str, Any],
@@ -557,6 +562,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def delete_fact(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
     ) -> bool:
@@ -568,6 +574,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def get_fact_history(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
     ) -> List[Dict[str, Any]]:
@@ -579,6 +586,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def get_recent_fact_changes(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         limit: int = 50,
         operation: Optional[str] = None,
@@ -591,6 +599,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def get_fact_change_stats(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
     ) -> Optional[Dict[str, Any]]:
         """Get statistics about fact changes for a user."""

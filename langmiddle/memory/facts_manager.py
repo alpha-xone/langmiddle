@@ -67,6 +67,7 @@ def query_existing_facts(
     credentials: dict[str, Any],
     embedder: Embeddings,
     new_facts: list[dict],
+    user_id: str,
     embeddings_cache: dict[str, list[float]] | None = None,
 ) -> list[dict]:
     """Query existing facts from storage using embeddings and namespace filtering.
@@ -82,6 +83,7 @@ def query_existing_facts(
         credentials: Credentials for storage backend
         embedder: Embeddings model for generating vectors
         new_facts: List of newly extracted facts
+        user_id: User identifier
         embeddings_cache: Optional dict mapping content strings to pre-computed embedding vectors.
                           Only missing embeddings will be generated.
 
@@ -148,6 +150,7 @@ def query_existing_facts(
                 results = storage_backend.query_facts(
                     credentials=credentials,
                     query_embedding=embedding,
+                    user_id=user_id,
                     model_dimension=model_dimension,
                     match_threshold=0.75,  # Moderate threshold for updates
                     match_count=5,  # Get top 5 similar facts
@@ -166,6 +169,7 @@ def query_existing_facts(
             results = storage_backend.query_facts(
                 credentials=credentials,
                 query_embedding=embedding,
+                user_id=user_id,
                 model_dimension=model_dimension,
                 match_threshold=0.80,  # Slightly higher threshold for non-namespace matches
                 match_count=3,  # Fewer results without namespace filter
@@ -276,6 +280,7 @@ def get_actions(
 
 def apply_fact_actions(
     storage_backend: "ChatStorageBackend",
+    credentials: dict[str, Any],
     embedder: Embeddings,
     user_id: str,
     actions: list[dict],
@@ -285,6 +290,7 @@ def apply_fact_actions(
 
     Args:
         storage_backend: Storage backend instance with insert/update/delete methods
+        credentials: Credentials for storage backend
         embedder: Embeddings model for generating vectors
         user_id: User identifier
         actions: List of action dictionaries with 'action' field (ADD, UPDATE, DELETE, NONE)
@@ -364,6 +370,7 @@ def apply_fact_actions(
                     }
 
                     result = storage_backend.insert_facts(
+                        credentials=credentials,
                         user_id=user_id,
                         facts=[fact],
                         embeddings=[embedding],
@@ -426,6 +433,7 @@ def apply_fact_actions(
                     }
 
                     success = storage_backend.update_fact(
+                        credentials=credentials,
                         fact_id=fact_id,
                         user_id=user_id,
                         updates=updates,
@@ -450,6 +458,7 @@ def apply_fact_actions(
         try:
             fact_id = action_item.get("id")
             success = storage_backend.delete_fact(
+                credentials=credentials,
                 fact_id=fact_id,
                 user_id=user_id,
             )

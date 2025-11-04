@@ -20,15 +20,16 @@ from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, AgentState
-from langchain_core.language_models import BaseChatModel
 from langchain.chat_models import init_chat_model
 from langchain.embeddings import Embeddings, init_embeddings
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AnyMessage,
     MessageLikeRepresentation,
 )
 from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.runtime import Runtime
+from langgraph.typing import ContextT
 
 from langmiddle.memory.facts_manager import (
     apply_fact_actions,
@@ -48,7 +49,7 @@ logger = get_graph_logger(__name__)
 logger._logger.propagate = False
 
 
-class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
+class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
     """Context Engineer enhanced context for agents through memory extraction and management.
 
     This middleware wraps model calls to provide context engineering capabilities:
@@ -241,6 +242,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
         self,
         new_facts: list[dict],
         user_id: str,
+        credentials: dict[str, Any],
     ) -> list[dict]:
         """Query existing facts from storage using embeddings and namespace filtering.
 
@@ -249,6 +251,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
         Args:
             new_facts: List of newly extracted facts
             user_id: User identifier
+            credentials: Credentials for storage backend
 
         Returns:
             List of existing relevant facts from storage
@@ -258,9 +261,10 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
 
         return query_existing_facts(
             storage_backend=self.storage.backend,
+            credentials=credentials,
             embedder=self.embedder,
-            user_id=user_id,
             new_facts=new_facts,
+            user_id=user_id,
             embeddings_cache=self.embeddings_cache,
         )
 
@@ -304,6 +308,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
         self,
         actions: list[dict],
         user_id: str,
+        credentials: dict[str, Any],
     ) -> dict[str, Any]:
         """Apply fact actions to storage.
 
@@ -312,6 +317,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
         Args:
             actions: List of action dictionaries from get_actions
             user_id: User identifier
+            credentials: Credentials for storage backend
 
         Returns:
             Dictionary with action statistics and results
@@ -328,6 +334,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
 
         return apply_fact_actions(
             storage_backend=self.storage.backend,
+            credentials=credentials,
             embedder=self.embedder,
             user_id=user_id,
             actions=actions,
@@ -387,6 +394,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
             return None
 
         # Authenticate with storage backend
+        credentials = None
         try:
             credentials = self.storage.backend.prepare_credentials(
                 user_id=user_id,
@@ -395,6 +403,10 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
             self.storage.backend.authenticate(credentials)
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
+            # Still set credentials even if authentication fails,
+            # as some backends might not require explicit auth
+            if credentials is None:
+                credentials = {"user_id": user_id}
 
         graph_logs = []
         self._extraction_count += 1
@@ -421,7 +433,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
                 self._logged_messages.add(log_msg)
 
             # Step 2: Query existing facts
-            existing_facts = self._query_existing_facts(new_facts, user_id)
+            existing_facts = self._query_existing_facts(new_facts, user_id, credentials)
 
             if existing_facts:
                 log_msg = f"[after_agent] Found {len(existing_facts)} existing related facts"
@@ -439,6 +451,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
                 model_dimension = len(embeddings[0]) if embeddings else 1536
 
                 result = self.storage.backend.insert_facts(
+                    credentials=credentials,
                     user_id=user_id,
                     facts=new_facts,
                     embeddings=embeddings,
@@ -457,7 +470,7 @@ class ContextEngineer(AgentMiddleware[AgentState, Runtime]):
                             self._logged_messages.add(log_msg)
             else:
                 # Step 4: Apply actions
-                stats = self._apply_actions(actions, user_id)
+                stats = self._apply_actions(actions, user_id, credentials)
 
                 # Log statistics
                 if stats["added"] > 0 or stats["updated"] > 0 or stats["deleted"] > 0:

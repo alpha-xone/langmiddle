@@ -210,6 +210,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
     def save_messages(
         self,
+        credentials: Optional[Dict[str, Any]],
         thread_id: str,
         user_id: str,
         messages: List[AnyMessage],
@@ -335,6 +336,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
     def get_thread(
         self,
+        credentials: Optional[Dict[str, Any]],
         thread_id: str,
     ) -> dict | None:
         """
@@ -600,6 +602,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
     def insert_facts(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         facts: Sequence[Dict[str, Any] | str],
         embeddings: Optional[List[List[float]]] = None,
@@ -613,6 +616,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
     def query_facts(
         self,
+        credentials: Optional[Dict[str, Any]],
         query_embedding: List[float],
         user_id: str,
         model_dimension: int,
@@ -628,6 +632,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
     def get_fact_by_id(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
     ) -> Optional[Dict[str, Any]]:
@@ -639,6 +644,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
     def update_fact(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
         updates: Dict[str, Any],
@@ -652,6 +658,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
     def delete_fact(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
     ) -> bool:
@@ -663,6 +670,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
     def check_processed_message(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_id: str,
     ) -> bool:
@@ -674,6 +682,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
     def mark_processed_message(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_id: str,
         thread_id: str,
@@ -686,6 +695,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
     def check_processed_messages_batch(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_ids: List[str],
     ) -> List[str]:
@@ -697,6 +707,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
     def mark_processed_messages_batch(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_data: List[Dict[str, str]],
     ) -> bool:

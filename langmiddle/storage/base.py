@@ -198,6 +198,7 @@ class ChatStorageBackend(ABC):
     @abstractmethod
     def insert_facts(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         facts: Sequence[Dict[str, Any] | str],
         embeddings: Optional[List[List[float]]] = None,
@@ -222,6 +223,7 @@ class ChatStorageBackend(ABC):
     @abstractmethod
     def query_facts(
         self,
+        credentials: Optional[Dict[str, Any]],
         query_embedding: List[float],
         user_id: str,
         model_dimension: int,
@@ -248,6 +250,7 @@ class ChatStorageBackend(ABC):
     @abstractmethod
     def get_fact_by_id(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
     ) -> Optional[Dict[str, Any]]:
@@ -266,6 +269,7 @@ class ChatStorageBackend(ABC):
     @abstractmethod
     def update_fact(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
         updates: Dict[str, Any],
@@ -288,6 +292,7 @@ class ChatStorageBackend(ABC):
     @abstractmethod
     def delete_fact(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
     ) -> bool:
@@ -305,6 +310,7 @@ class ChatStorageBackend(ABC):
 
     def get_fact_history(
         self,
+        credentials: Optional[Dict[str, Any]],
         fact_id: str,
         user_id: str,
     ) -> List[Dict[str, Any]]:
@@ -322,6 +328,7 @@ class ChatStorageBackend(ABC):
 
     def get_recent_fact_changes(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         limit: int = 50,
         operation: Optional[str] = None,
@@ -341,6 +348,7 @@ class ChatStorageBackend(ABC):
 
     def get_fact_change_stats(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
     ) -> Optional[Dict[str, Any]]:
         """
@@ -357,6 +365,7 @@ class ChatStorageBackend(ABC):
     @abstractmethod
     def check_processed_message(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_id: str,
     ) -> bool:
@@ -375,6 +384,7 @@ class ChatStorageBackend(ABC):
     @abstractmethod
     def mark_processed_message(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_id: str,
         thread_id: str,
@@ -395,6 +405,7 @@ class ChatStorageBackend(ABC):
     @abstractmethod
     def check_processed_messages_batch(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_ids: List[str],
     ) -> List[str]:
@@ -413,6 +424,7 @@ class ChatStorageBackend(ABC):
     @abstractmethod
     def mark_processed_messages_batch(
         self,
+        credentials: Optional[Dict[str, Any]],
         user_id: str,
         message_data: List[Dict[str, str]],
     ) -> bool:
