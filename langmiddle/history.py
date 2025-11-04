@@ -15,6 +15,7 @@ from langchain.messages import RemoveMessage
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
+from langgraph.typing import ContextT
 
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
@@ -74,7 +75,7 @@ class StorageContext:
     auth_token: str | None = None
 
 
-class ToolRemover(AgentMiddleware[AgentState, Runtime]):
+class ToolRemover(AgentMiddleware[AgentState, ContextT]):
     """
     Middleware to remove tool messages from chat history.
 
@@ -108,37 +109,6 @@ class ToolRemover(AgentMiddleware[AgentState, Runtime]):
             )
         self.when: str = when
 
-    def _filter_tool_messages(
-        self,
-        state: AgentState,
-        stage: str,
-    ) -> dict[str, Any] | None:
-        """
-        Filter tool messages from the message list using RemoveMessage.
-
-        Args:
-            messages: List of messages to filter
-            stage: Stage name for logging ('before_agent' or 'after_agent')
-
-        Returns:
-            Updated state dict with RemoveMessage instances or None if no filtering occurred
-        """
-        messages: list[Any] = state.get("messages", [])
-        new_messages: list[Any] = filter_tool_messages(messages)
-
-        # Only return update if we have messages to remove
-        cnt_diff: int = len(messages) - len(new_messages)
-        if cnt_diff > 0:
-            logger.debug(f"[{stage}] Marked {cnt_diff} tool-related messages for removal")
-            return {
-                "messages": [
-                    RemoveMessage(id=REMOVE_ALL_MESSAGES),
-                    *new_messages,
-                ]
-            }
-
-        return None
-
     def before_agent(
         self,
         state: AgentState,
@@ -157,7 +127,21 @@ class ToolRemover(AgentMiddleware[AgentState, Runtime]):
         if self.when not in ("before", "both"):
             return None
 
-        return self._filter_tool_messages(state, "before_agent")
+        messages: list[Any] = state.get("messages", [])
+        new_messages: list[Any] = filter_tool_messages(messages)
+
+        # Only return update if we have messages to remove
+        cnt_diff: int = len(messages) - len(new_messages)
+        if cnt_diff > 0:
+            logger.debug(f"[before_agent] Marked {cnt_diff} tool-related messages for removal")
+            return {
+                "messages": [
+                    RemoveMessage(id=REMOVE_ALL_MESSAGES),
+                    *new_messages,
+                ]
+            }
+
+        return None
 
     def after_agent(
         self,
@@ -177,10 +161,24 @@ class ToolRemover(AgentMiddleware[AgentState, Runtime]):
         if self.when not in ("after", "both"):
             return None
 
-        return self._filter_tool_messages(state, "after_agent")
+        messages: list[Any] = state.get("messages", [])
+        new_messages: list[Any] = filter_tool_messages(messages)
+
+        # Only return update if we have messages to remove
+        cnt_diff: int = len(messages) - len(new_messages)
+        if cnt_diff > 0:
+            logger.debug(f"[after_agent] Marked {cnt_diff} tool-related messages for removal")
+            return {
+                "messages": [
+                    RemoveMessage(id=REMOVE_ALL_MESSAGES),
+                    *new_messages,
+                ]
+            }
+
+        return None
 
 
-class ChatSaver(AgentMiddleware[AgentState, Runtime]):
+class ChatSaver(AgentMiddleware[AgentState, ContextT]):
     """Middleware to save chat history to various storage backends after each model response.
 
     This middleware automatically captures and persists conversation history
