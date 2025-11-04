@@ -441,7 +441,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         saved_count = 0
         errors = []
 
-        if not self.ensure_thread_exists(thread_id, user_id):
+        if not self.ensure_thread_exists(credentials, thread_id, user_id):
             errors.append(f"Failed to ensure thread {thread_id} exists")
             return {"saved_count": saved_count, "errors": errors}
 
