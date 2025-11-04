@@ -376,11 +376,12 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
             logger.error(f"Error fetching existing messages: {e}")
             return set()
 
-    def ensure_thread_exists(self, thread_id: str, user_id: str) -> bool:
+    def ensure_thread_exists(self, credentials: Dict[str, Any] | None, thread_id: str, user_id: str) -> bool:
         """
         Ensure chat thread exists in database.
 
         Args:
+            credentials: Authentication credentials (unused for PostgreSQL)
             thread_id: Thread identifier
             user_id: User identifier
 

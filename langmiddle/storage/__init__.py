@@ -156,7 +156,7 @@ class ChatStorage:
             }
 
         # Ensure thread exists
-        if not self.backend.ensure_thread_exists(thread_id, user_id):
+        if not self.backend.ensure_thread_exists(credentials, thread_id, user_id):
             return {
                 "success": False,
                 "saved_count": 0,

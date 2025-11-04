@@ -387,9 +387,13 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             logger.error(f"Error getting message IDs for thread {thread_id}: {e}")
             return set()
 
-    def ensure_thread_exists(self, thread_id: str, user_id: str) -> bool:
-        """Ensure chat thread exists (internal helper)."""
+    @with_auth_retry
+    def ensure_thread_exists(self, credentials: Dict[str, Any] | None, thread_id: str, user_id: str) -> bool:
+        """Ensure chat thread exists (with auth)."""
         try:
+            # Ensure authenticated
+            self._ensure_authenticated(credentials)
+
             result = (
                 self.client.table("chat_threads")
                 .upsert({"id": thread_id, "user_id": user_id}, on_conflict="id")

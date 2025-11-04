@@ -173,11 +173,12 @@ class FirebaseStorageBackend(ChatStorageBackend):
             logger.error(f"Error fetching existing messages: {e}")
             return set()
 
-    def ensure_thread_exists(self, thread_id: str, user_id: str) -> bool:
+    def ensure_thread_exists(self, credentials: Dict[str, Any] | None, thread_id: str, user_id: str) -> bool:
         """
         Ensure chat thread exists in Firestore.
 
         Args:
+            credentials: Authentication credentials (unused for Firebase)
             thread_id: Thread identifier
             user_id: User identifier
 
@@ -225,7 +226,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
         saved_count = 0
         errors = []
 
-        if not self.ensure_thread_exists(thread_id, user_id):
+        if not self.ensure_thread_exists(credentials, thread_id, user_id):
             errors.append(f"Failed to ensure thread {thread_id} exists")
             return {"saved_count": saved_count, "errors": errors}
 

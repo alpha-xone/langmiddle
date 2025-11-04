@@ -176,11 +176,12 @@ class SQLiteStorageBackend(ChatStorageBackend):
             logger.error(f"Error fetching existing messages: {e}")
             return set()
 
-    def ensure_thread_exists(self, thread_id: str, user_id: str) -> bool:
+    def ensure_thread_exists(self, credentials: Dict[str, Any] | None, thread_id: str, user_id: str) -> bool:
         """
         Ensure chat thread exists in SQLite.
 
         Args:
+            credentials: Authentication credentials (unused for SQLite)
             thread_id: Thread identifier
             user_id: User identifier
 
@@ -236,7 +237,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
             if self._persistent_conn:
                 # Use persistent connection for in-memory database
-                if not self.ensure_thread_exists(thread_id, user_id):
+                if not self.ensure_thread_exists(credentials, thread_id, user_id):
                     return {"saved_count": 0, "errors": ["Thread does not exist"]}
 
                 if custom_state:
@@ -283,7 +284,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
             else:
                 # Use context manager for file-based database
                 with sqlite3.connect(self.db_path) as conn:
-                    if not self.ensure_thread_exists(thread_id, user_id):
+                    if not self.ensure_thread_exists(credentials, thread_id, user_id):
                         return {"saved_count": 0, "errors": ["Thread does not exist"]}
 
                     if custom_state:

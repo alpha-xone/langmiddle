@@ -94,11 +94,12 @@ class ChatStorageBackend(ABC):
         pass
 
     @abstractmethod
-    def ensure_thread_exists(self, thread_id: str, user_id: str) -> bool:
+    def ensure_thread_exists(self, credentials: Dict[str, Any] | None, thread_id: str, user_id: str) -> bool:
         """
-        Ensure chat thread exists in storage.
+        Ensure a thread exists in the database.
 
         Args:
+            credentials: Authentication credentials (format varies by backend)
             thread_id: Thread identifier
             user_id: User identifier
 
