@@ -426,7 +426,7 @@ create or replace function public.search_facts(
   p_user_id uuid,
   p_threshold float8 default 0.75,
   p_limit int default 10,
-  p_namespaces text[][] default null
+  p_namespaces jsonb default null
 )
 returns table (
   id uuid,
@@ -474,8 +474,13 @@ begin
   );
 
   -- Add namespace filter if provided
-  if p_namespaces is not null and array_length(p_namespaces, 1) > 0 then
-    v_query := v_query || ' and f.namespace && $6';
+  -- Check if f.namespace matches ANY of the provided namespace arrays (supports variable-length arrays)
+  if p_namespaces is not null and jsonb_array_length(p_namespaces) > 0 then
+    v_query := v_query || '
+      and EXISTS (
+        SELECT 1 FROM jsonb_array_elements($6) AS ns
+        WHERE f.namespace = ARRAY(SELECT jsonb_array_elements_text(ns))::text[]
+      )';
   end if;
 
   -- Add similarity filter and ordering

@@ -72,11 +72,10 @@ def query_existing_facts(
 ) -> list[dict]:
     """Query existing facts from storage using embeddings and namespace filtering.
 
-    Strategy:
-    1. For each new fact, collect all unique namespace prefixes (e.g., ['user'], ['user', 'preferences'])
-    2. Query with namespace filtering to find facts in related namespaces
-    3. Also query without namespace filter to catch facts that might need namespace updates
-    4. Return deduplicated results prioritizing namespace matches
+    Efficient batch strategy:
+    1. Do ONE high-similarity query across all embeddings (find duplicates)
+    2. For facts without high-similarity matches, do ONE namespace-filtered query
+    3. Return deduplicated results prioritizing high-similarity matches
 
     Args:
         storage_backend: Storage backend instance with query_facts method
@@ -130,30 +129,61 @@ def query_existing_facts(
             return []
 
         model_dimension = len(embeddings[0])
-
-        # Query existing facts for each embedding
         all_existing_facts = []
         seen_ids = set()
+        facts_with_high_sim = set()  # Track which new facts found high-similarity matches
 
+        # BATCH Stage 1: High similarity search for ALL facts (find duplicates)
+        # This is efficient - one query per embedding but catches most duplicates
+        logger.debug(f"Running high-similarity queries for {len(embeddings)} facts")
         for idx, embedding in enumerate(embeddings):
-            new_fact = new_facts[idx]
-            new_namespace = new_fact.get("namespace", [])
+            results = storage_backend.query_facts(
+                credentials=credentials,
+                query_embedding=embedding,
+                user_id=user_id,
+                model_dimension=model_dimension,
+                match_threshold=0.85,  # Very high threshold - likely duplicates
+                match_count=3,  # Fewer results for high-similarity
+                filter_namespaces=None,
+            )
 
-            # Strategy 1: Query with specific namespace filtering (prioritized)
-            if new_namespace:
-                # Build namespace filter for this specific fact:
-                # Include exact match and parent namespaces
+            if results:
+                facts_with_high_sim.add(idx)
+                for fact in results:
+                    fact_id = fact.get("id")
+                    if fact_id and fact_id not in seen_ids:
+                        seen_ids.add(fact_id)
+                        fact["_match_type"] = "high_similarity"
+                        fact["_source_idx"] = idx  # Track which new fact this matches
+                        all_existing_facts.append(fact)
+
+        # BATCH Stage 2: Namespace filtering for facts WITHOUT high-similarity matches
+        # Collect all namespace filters from facts that need them
+        facts_needing_ns_query = [
+            (idx, new_facts[idx])
+            for idx in range(len(new_facts))
+            if idx not in facts_with_high_sim and new_facts[idx].get("namespace")
+        ]
+
+        if facts_needing_ns_query:
+            logger.debug(f"Running namespace queries for {len(facts_needing_ns_query)} facts")
+            for idx, new_fact in facts_needing_ns_query:
+                new_namespace = new_fact.get("namespace", [])
+                if not new_namespace:
+                    continue
+
+                # Build namespace filter: include exact match and parent namespaces
                 fact_namespace_filters = []
                 for i in range(1, len(new_namespace) + 1):
                     fact_namespace_filters.append(new_namespace[:i])
 
                 results = storage_backend.query_facts(
                     credentials=credentials,
-                    query_embedding=embedding,
+                    query_embedding=embeddings[idx],
                     user_id=user_id,
                     model_dimension=model_dimension,
-                    match_threshold=0.75,  # Moderate threshold for updates
-                    match_count=5,  # Get top 5 similar facts
+                    match_threshold=0.70,  # Lower threshold within same namespace
+                    match_count=5,
                     filter_namespaces=fact_namespace_filters,
                 )
 
@@ -161,39 +191,26 @@ def query_existing_facts(
                     fact_id = fact.get("id")
                     if fact_id and fact_id not in seen_ids:
                         seen_ids.add(fact_id)
-                        fact["_namespace_match"] = True  # Mark as namespace match
+                        fact["_match_type"] = "namespace"
+                        fact["_source_idx"] = idx
                         all_existing_facts.append(fact)
 
-            # Strategy 2: Query without namespace filter (broader search)
-            # This catches facts that might be in wrong namespaces or need updating
-            results = storage_backend.query_facts(
-                credentials=credentials,
-                query_embedding=embedding,
-                user_id=user_id,
-                model_dimension=model_dimension,
-                match_threshold=0.80,  # Slightly higher threshold for non-namespace matches
-                match_count=3,  # Fewer results without namespace filter
-                filter_namespaces=None,
-            )
-
-            for fact in results:
-                fact_id = fact.get("id")
-                if fact_id and fact_id not in seen_ids:
-                    seen_ids.add(fact_id)
-                    fact["_namespace_match"] = False  # Mark as non-namespace match
-                    all_existing_facts.append(fact)
-
-        # Sort results: namespace matches first, then by similarity
+        # Sort results: prioritize by match type and similarity
+        # Order: high_similarity (likely duplicates) > namespace matches
+        match_type_priority = {"high_similarity": 0, "namespace": 1}
         all_existing_facts.sort(
             key=lambda x: (
-                not x.get("_namespace_match", False),  # Namespace matches first (False < True)
+                match_type_priority.get(x.get("_match_type", "namespace"), 2),
                 -x.get("similarity", 0),  # Then by similarity descending
             )
         )
 
-        logger.debug(
-            f"Found {len(all_existing_facts)} unique existing facts "
-            f"({sum(1 for f in all_existing_facts if f.get('_namespace_match'))} with namespace match)"
+        high_sim_count = sum(1 for f in all_existing_facts if f.get("_match_type") == "high_similarity")
+        ns_count = sum(1 for f in all_existing_facts if f.get("_match_type") == "namespace")
+
+        logger.info(
+            f"Found {len(all_existing_facts)} unique existing facts in {len(embeddings) + len(facts_needing_ns_query)} queries: "
+            f"{high_sim_count} high-similarity, {ns_count} namespace matches"
         )
         return all_existing_facts
 
