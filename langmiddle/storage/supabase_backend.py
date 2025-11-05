@@ -197,11 +197,27 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         connection_string: Optional[str] = None,
         auto_create_tables: bool = False,
         enable_facts: bool = False,
+        enable_day_dreaming: bool = False,
         load_from_env: bool = True,
         user_id: Optional[str] = None,
         credentials: Optional[Dict[str, Any]] = None,
     ):
-        """Initialize Supabase storage backend."""
+        """
+        Initialize Supabase storage backend.
+
+        Args:
+            client: Existing Supabase client (optional)
+            supabase_url: Supabase project URL
+            supabase_key: Supabase anon/service key
+            connection_string: Direct PostgreSQL connection string (required for auto_create_tables)
+            auto_create_tables: Whether to automatically create tables on initialization
+            enable_facts: Whether to create facts tables (semantic memory)
+            enable_day_dreaming: Whether to create fact deduplication and maintenance functions
+                                 (requires enable_facts=True, includes pg_cron job setup)
+            load_from_env: Whether to load credentials from environment variables
+            user_id: User ID (deprecated, use credentials instead)
+            credentials: Authentication credentials dict
+        """
         if client:
             self.client = client
             self._current_token_hash = None
@@ -261,6 +277,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 connection_string=connection_string,
                 sql_dir=sql_dir,
                 enable_facts=enable_facts,
+                enable_day_dreaming=enable_day_dreaming,
             )
 
     # =========================================================================

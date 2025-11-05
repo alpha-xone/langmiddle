@@ -27,7 +27,11 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
     """
 
     def _create_tables_with_psycopg2(
-        self, connection_string: str, sql_dir: Path, enable_facts: bool = False
+        self,
+        connection_string: str,
+        sql_dir: Path,
+        enable_facts: bool = False,
+        enable_day_dreaming: bool = False
     ) -> None:
         """
         Create PostgreSQL tables from SQL files if they don't exist.
@@ -39,6 +43,8 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
             connection_string: PostgreSQL connection string for direct database access
             sql_dir: Path to directory containing SQL schema files (e.g., 'postgres/' or 'supabase/')
             enable_facts: Whether to create facts-related tables (chat_facts.sql with processed_messages)
+            enable_day_dreaming: Whether to create fact deduplication and maintenance functions
+                                 (requires enable_facts=True)
 
         Raises:
             ImportError: If psycopg2 is not installed
@@ -49,6 +55,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
             - For Supabase backend: uses Supabase-specific auth.users and RLS policies
             - All SQL scripts use IF NOT EXISTS/IF EXISTS checks for idempotency
             - Detailed logging reports on each table, index, trigger, function, and policy
+            - fact_maintenance.sql provides server-side deduplication with pg_cron support
         """
         try:
             import psycopg2
@@ -77,6 +84,11 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
             if enable_facts:
                 sql_files.append("chat_facts.sql")
                 logger.info("Facts tables enabled - will create chat_facts.sql schema")
+
+                # Add fact maintenance SQL if requested
+                if enable_day_dreaming:
+                    sql_files.append("fact_maintenance.sql")
+                    logger.info("Fact maintenance enabled - will create deduplication functions and jobs")
 
             for sql_file in sql_files:
                 sql_path = sql_dir / sql_file
