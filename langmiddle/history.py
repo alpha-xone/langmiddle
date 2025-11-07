@@ -15,11 +15,11 @@ from langchain.messages import RemoveMessage
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
-from langgraph.typing import ContextT
 
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
 from .utils.messages import filter_tool_messages
+from .utils.runtime import get_user_id
 
 logger = get_graph_logger(__name__)
 # Disable propagation to avoid duplicate logs (LangGraph handles the logging)
@@ -75,7 +75,7 @@ class StorageContext:
     auth_token: str | None = None
 
 
-class ToolRemover(AgentMiddleware[AgentState, ContextT]):
+class ToolRemover(AgentMiddleware):
     """
     Middleware to remove tool messages from chat history.
 
@@ -112,7 +112,7 @@ class ToolRemover(AgentMiddleware[AgentState, ContextT]):
     def before_agent(
         self,
         state: AgentState,
-        runtime: Runtime[Any],
+        runtime: Runtime,
     ) -> dict[str, Any] | None:
         """
         Filter tool messages from the state before agent call.
@@ -178,7 +178,7 @@ class ToolRemover(AgentMiddleware[AgentState, ContextT]):
         return None
 
 
-class ChatSaver(AgentMiddleware[AgentState, ContextT]):
+class ChatSaver(AgentMiddleware):
     """Middleware to save chat history to various storage backends after each model response.
 
     This middleware automatically captures and persists conversation history
@@ -309,7 +309,7 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
     def after_agent(
         self,
         state: AgentState,
-        runtime: Runtime[Any],
+        runtime: Runtime,
     ) -> dict[str, Any] | None:
         """Save chat history after agent execution completes.
 
@@ -331,7 +331,10 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
             return None
 
         # Extract context information from runtime
-        user_id: str | None = getattr(runtime.context, "user_id", None)
+        user_id: str | None = get_user_id(
+            runtime=runtime,
+            storage_backend=self.storage.backend if self.storage else None,
+        )
         thread_id: str | None = getattr(runtime.context, "thread_id", None)
         auth_token: str | None = getattr(runtime.context, "auth_token", None)
 
