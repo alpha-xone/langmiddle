@@ -22,6 +22,7 @@ from typing import Any
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.chat_models import init_chat_model
 from langchain.embeddings import Embeddings, init_embeddings
+from langchain.messages import SystemMessage
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AnyMessage,
@@ -30,7 +31,7 @@ from langchain_core.messages import (
 from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
-from langchain.messages import SystemMessage
+from utils.messages import split_messages
 
 from langmiddle.memory.facts_manager import (
     apply_fact_actions,
@@ -42,13 +43,12 @@ from langmiddle.memory.facts_manager import (
 from .memory.facts_manager import ALWAYS_LOADED_NAMESPACES
 from .memory.facts_prompts import (
     DEFAULT_FACTS_EXTRACTOR,
-    DEFAULT_FACTS_UPDATER,
     DEFAULT_FACTS_INJECTOR,
+    DEFAULT_FACTS_UPDATER,
 )
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
-from .utils.runtime import get_user_id, auth_storage
-from utils.messages import split_messages
+from .utils.runtime import auth_storage, get_user_id
 
 TokenCounter = Callable[[Iterable[MessageLikeRepresentation]], int]
 
