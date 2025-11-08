@@ -730,15 +730,70 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     def query_facts(
         self,
         credentials: Optional[Dict[str, Any]],
-        query_embedding: List[float],
-        user_id: str,
-        model_dimension: int,
+        query_embedding: Optional[List[float]] = None,
+        user_id: Optional[str] = None,
+        model_dimension: Optional[int] = None,
         match_threshold: float = 0.75,
         match_count: int = 10,
         filter_namespaces: Optional[List[List[str]]] = None,
     ) -> List[Dict[str, Any]]:
-        """Query facts using vector similarity search."""
+        """Query facts using vector similarity search or list all facts.
+
+        Args:
+            credentials: Authentication credentials
+            query_embedding: Query vector for similarity search. If None, lists all facts.
+            user_id: User identifier (optional, extracted from credentials if not provided)
+            model_dimension: Embedding dimension (optional, inferred from query_embedding)
+            match_threshold: Minimum similarity threshold (0-1, default: 0.75)
+            match_count: Maximum number of results to return
+            filter_namespaces: Optional list of namespace paths to filter by
+
+        Returns:
+            List of fact dictionaries with optional similarity scores
+        """
+        # Extract user_id from credentials if not provided
+        if not user_id:
+            user_id = self.extract_user_id(credentials)
+            if not user_id:
+                logger.error("user_id required for query_facts")
+                return []
+
+        # If query_embedding provided, infer dimension if not specified
+        if query_embedding and not model_dimension:
+            model_dimension = len(query_embedding)
+
         try:
+            # If no query_embedding, list all facts (no similarity search)
+            if query_embedding is None:
+                query = (
+                    self.client.table("facts")
+                    .select("*")
+                    .eq("user_id", user_id)
+                )
+
+                # Add namespace filter if provided
+                # For PostgreSQL arrays, we need to match exact arrays
+                if filter_namespaces:
+                    # Filter for facts where namespace matches any of the provided namespace arrays
+                    # This uses PostgreSQL's array comparison operators
+                    for ns in filter_namespaces:
+                        if ns:  # Only add filter if namespace is not empty
+                            query = query.or_(f"namespace.eq.{{{','.join(ns)}}}")
+
+                result = query.limit(match_count).execute()
+
+                if not result.data:
+                    logger.debug("No facts found")
+                    return []
+
+                logger.info(f"Listed {len(result.data)} facts")
+                return result.data
+
+            # Vector similarity search mode
+            if not model_dimension:
+                logger.error("model_dimension required when query_embedding is provided")
+                return []
+
             params = {
                 "p_embedding": query_embedding,
                 "p_dimension": model_dimension,
@@ -765,9 +820,25 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
+        user_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Get a fact by its ID."""
+        """Get a fact by its ID.
+
+        Args:
+            credentials: Authentication credentials
+            fact_id: Fact identifier
+            user_id: User identifier (optional, extracted from credentials if not provided)
+
+        Returns:
+            Fact dictionary if found, None otherwise
+        """
+        # Extract user_id from credentials if not provided
+        if not user_id:
+            user_id = self.extract_user_id(credentials)
+            if not user_id:
+                logger.error("user_id required for get_fact_by_id")
+                return None
+
         try:
             result = (
                 self.client.table("facts")
@@ -790,23 +861,47 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
-        updates: Dict[str, Any],
+        user_id: Optional[str] = None,
+        updates: Optional[Dict[str, Any]] = None,
         embedding: Optional[List[float]] = None,
     ) -> bool:
-        """Update a fact's content and/or metadata."""
-        try:
-            updates["updated_at"] = "now()"
-            result = (
-                self.client.table("facts")
-                .update(updates)
-                .eq("id", fact_id)
-                .eq("user_id", user_id)
-                .execute()
-            )
+        """Update a fact's content and/or metadata.
 
-            if not result.data:
+        Args:
+            credentials: Authentication credentials
+            fact_id: Fact identifier
+            user_id: User identifier (optional, extracted from credentials if not provided)
+            updates: Dictionary of fields to update
+            embedding: Optional new embedding vector
+
+        Returns:
+            True if update successful, False otherwise
+        """
+        # Extract user_id from credentials if not provided
+        if not user_id:
+            user_id = self.extract_user_id(credentials)
+            if not user_id:
+                logger.error("user_id required for update_fact")
                 return False
+
+        if not updates and not embedding:
+            logger.warning("No updates or embedding provided for update_fact")
+            return False
+
+        try:
+            # Update fact metadata if updates provided
+            if updates:
+                updates["updated_at"] = "now()"
+                result = (
+                    self.client.table("facts")
+                    .update(updates)
+                    .eq("id", fact_id)
+                    .eq("user_id", user_id)
+                    .execute()
+                )
+
+                if not result.data:
+                    return False
 
             # Update embedding if provided
             if embedding:
@@ -835,9 +930,25 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
+        user_id: Optional[str] = None,
     ) -> bool:
-        """Delete a fact and its embeddings."""
+        """Delete a fact and its embeddings.
+
+        Args:
+            credentials: Authentication credentials
+            fact_id: Fact identifier
+            user_id: User identifier (optional, extracted from credentials if not provided)
+
+        Returns:
+            True if deletion successful, False otherwise
+        """
+        # Extract user_id from credentials if not provided
+        if not user_id:
+            user_id = self.extract_user_id(credentials)
+            if not user_id:
+                logger.error("user_id required for delete_fact")
+                return False
+
         try:
             result = (
                 self.client.table("facts")
@@ -864,10 +975,30 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     def check_processed_message(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
-        message_id: str,
+        user_id: Optional[str] = None,
+        message_id: Optional[str] = None,
     ) -> bool:
-        """Check if message has been processed."""
+        """Check if message has been processed.
+
+        Args:
+            credentials: Authentication credentials
+            user_id: User identifier (optional, extracted from credentials if not provided)
+            message_id: Message identifier
+
+        Returns:
+            True if message has been processed, False otherwise
+        """
+        # Extract user_id from credentials if not provided
+        if not user_id:
+            user_id = self.extract_user_id(credentials)
+            if not user_id:
+                logger.error("user_id required for check_processed_message")
+                return False
+
+        if not message_id:
+            logger.error("message_id required for check_processed_message")
+            return False
+
         try:
             result = (
                 self.client.table("processed_messages")
@@ -886,11 +1017,36 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     def mark_processed_message(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
-        message_id: str,
-        thread_id: str,
+        user_id: Optional[str] = None,
+        message_id: Optional[str] = None,
+        thread_id: Optional[str] = None,
     ) -> bool:
-        """Mark message as processed."""
+        """Mark message as processed.
+
+        Args:
+            credentials: Authentication credentials
+            user_id: User identifier (optional, extracted from credentials if not provided)
+            message_id: Message identifier
+            thread_id: Thread identifier
+
+        Returns:
+            True if marking successful, False otherwise
+        """
+        # Extract user_id from credentials if not provided
+        if not user_id:
+            user_id = self.extract_user_id(credentials)
+            if not user_id:
+                logger.error("user_id required for mark_processed_message")
+                return False
+
+        if not message_id:
+            logger.error("message_id required for mark_processed_message")
+            return False
+
+        if not thread_id:
+            logger.error("thread_id required for mark_processed_message")
+            return False
+
         try:
             result = (
                 self.client.table("processed_messages")
@@ -914,10 +1070,26 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     def check_processed_messages_batch(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
-        message_ids: List[str],
+        user_id: Optional[str] = None,
+        message_ids: Optional[List[str]] = None,
     ) -> List[str]:
-        """Check which messages have been processed (batch)."""
+        """Check which messages have been processed (batch).
+
+        Args:
+            credentials: Authentication credentials
+            user_id: User identifier (optional, extracted from credentials if not provided)
+            message_ids: List of message identifiers to check
+
+        Returns:
+            List of message IDs that have been processed
+        """
+        # Extract user_id from credentials if not provided
+        if not user_id:
+            user_id = self.extract_user_id(credentials)
+            if not user_id:
+                logger.error("user_id required for check_processed_messages_batch")
+                return []
+
         if not message_ids:
             return []
 
@@ -941,10 +1113,26 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     def mark_processed_messages_batch(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
-        message_data: List[Dict[str, str]],
+        user_id: Optional[str] = None,
+        message_data: Optional[List[Dict[str, str]]] = None,
     ) -> bool:
-        """Mark multiple messages as processed (batch)."""
+        """Mark multiple messages as processed (batch).
+
+        Args:
+            credentials: Authentication credentials
+            user_id: User identifier (optional, extracted from credentials if not provided)
+            message_data: List of dicts with 'message_id' and 'thread_id' keys
+
+        Returns:
+            True if marking successful, False otherwise
+        """
+        # Extract user_id from credentials if not provided
+        if not user_id:
+            user_id = self.extract_user_id(credentials)
+            if not user_id:
+                logger.error("user_id required for mark_processed_messages_batch")
+                return False
+
         if not message_data:
             return True
 
@@ -977,9 +1165,25 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
+        user_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Get complete history for a fact."""
+        """Get complete history for a fact.
+
+        Args:
+            credentials: Authentication credentials
+            fact_id: Fact identifier
+            user_id: User identifier (optional, extracted from credentials if not provided)
+
+        Returns:
+            List of history records for the fact
+        """
+        # Extract user_id from credentials if not provided
+        if not user_id:
+            user_id = self.extract_user_id(credentials)
+            if not user_id:
+                logger.error("user_id required for get_fact_history")
+                return []
+
         try:
             result = self.client.rpc(
                 "get_fact_history",
@@ -999,11 +1203,28 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     def get_recent_fact_changes(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
+        user_id: Optional[str] = None,
         limit: int = 50,
         operation: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Get recent fact changes for a user."""
+        """Get recent fact changes for a user.
+
+        Args:
+            credentials: Authentication credentials
+            user_id: User identifier (optional, extracted from credentials if not provided)
+            limit: Maximum number of changes to return
+            operation: Optional filter by operation type (INSERT, UPDATE, DELETE)
+
+        Returns:
+            List of recent fact changes
+        """
+        # Extract user_id from credentials if not provided
+        if not user_id:
+            user_id = self.extract_user_id(credentials)
+            if not user_id:
+                logger.error("user_id required for get_recent_fact_changes")
+                return []
+
         try:
             result = self.client.rpc(
                 "get_recent_fact_changes",
@@ -1023,9 +1244,24 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     def get_fact_change_stats(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
+        user_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Get statistics about fact changes."""
+        """Get statistics about fact changes.
+
+        Args:
+            credentials: Authentication credentials
+            user_id: User identifier (optional, extracted from credentials if not provided)
+
+        Returns:
+            Dictionary with change statistics, None if error
+        """
+        # Extract user_id from credentials if not provided
+        if not user_id:
+            user_id = self.extract_user_id(credentials)
+            if not user_id:
+                logger.error("user_id required for get_fact_change_stats")
+                return None
+
         try:
             result = self.client.rpc(
                 "get_fact_change_stats",

@@ -225,26 +225,27 @@ class ChatStorageBackend(ABC):
     def query_facts(
         self,
         credentials: Optional[Dict[str, Any]],
-        query_embedding: List[float],
-        user_id: str,
-        model_dimension: int,
+        query_embedding: Optional[List[float]] = None,
+        user_id: Optional[str] = None,
+        model_dimension: Optional[int] = None,
         match_threshold: float = 0.75,
         match_count: int = 10,
         filter_namespaces: Optional[List[List[str]]] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Query facts using vector similarity search.
+        Query facts using vector similarity search or list all facts.
 
         Args:
-            query_embedding: Query vector for similarity search
-            user_id: User identifier for filtering
-            model_dimension: Dimension of the embedding model
-            match_threshold: Minimum similarity threshold (0-1, default: 0.75)
+            credentials: Authentication credentials containing user_id (optional if user_id provided)
+            query_embedding: Query vector for similarity search. If None, lists all facts.
+            user_id: User identifier for filtering (optional, extracted from credentials if not provided)
+            model_dimension: Dimension of the embedding model (optional, inferred from query_embedding if not provided)
+            match_threshold: Minimum similarity threshold (0-1, default: 0.75). Ignored if query_embedding is None.
             match_count: Maximum number of results to return
             filter_namespaces: Optional list of namespace paths to filter by
 
         Returns:
-            List of fact dictionaries with similarity scores
+            List of fact dictionaries. Includes similarity scores if query_embedding provided.
         """
         raise NotImplementedError("`query_facts` not implemented")
 
@@ -253,14 +254,15 @@ class ChatStorageBackend(ABC):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
+        user_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Get a fact by its ID.
 
         Args:
+            credentials: Authentication credentials containing user_id (optional if user_id provided)
             fact_id: Fact identifier
-            user_id: User identifier for authorization
+            user_id: User identifier for authorization (optional, extracted from credentials if not provided)
 
         Returns:
             Fact dictionary if found, None otherwise
@@ -272,16 +274,17 @@ class ChatStorageBackend(ABC):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
-        updates: Dict[str, Any],
+        user_id: Optional[str] = None,
+        updates: Optional[Dict[str, Any]] = None,
         embedding: Optional[List[float]] = None,
     ) -> bool:
         """
         Update a fact's content and/or metadata.
 
         Args:
+            credentials: Authentication credentials containing user_id (optional if user_id provided)
             fact_id: Fact identifier
-            user_id: User identifier for authorization
+            user_id: User identifier for authorization (optional, extracted from credentials if not provided)
             updates: Dictionary of fields to update (content, namespace, intensity, confidence, etc.)
             embedding: Optional new embedding vector
 
@@ -295,14 +298,15 @@ class ChatStorageBackend(ABC):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
+        user_id: Optional[str] = None,
     ) -> bool:
         """
         Delete a fact and its embeddings.
 
         Args:
+            credentials: Authentication credentials containing user_id (optional if user_id provided)
             fact_id: Fact identifier
-            user_id: User identifier for authorization
+            user_id: User identifier for authorization (optional, extracted from credentials if not provided)
 
         Returns:
             True if deletion successful, False otherwise
@@ -313,14 +317,15 @@ class ChatStorageBackend(ABC):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
+        user_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get complete history for a specific fact.
 
         Args:
+            credentials: Authentication credentials containing user_id (optional if user_id provided)
             fact_id: Fact identifier
-            user_id: User identifier for authorization
+            user_id: User identifier for authorization (optional, extracted from credentials if not provided)
 
         Returns:
             List of history records, ordered from newest to oldest
@@ -330,7 +335,7 @@ class ChatStorageBackend(ABC):
     def get_recent_fact_changes(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
+        user_id: Optional[str] = None,
         limit: int = 50,
         operation: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
@@ -338,7 +343,8 @@ class ChatStorageBackend(ABC):
         Get recent fact changes for a user.
 
         Args:
-            user_id: User identifier
+            credentials: Authentication credentials containing user_id (optional if user_id provided)
+            user_id: User identifier (optional, extracted from credentials if not provided)
             limit: Maximum number of records to return
             operation: Optional filter by operation type ('INSERT', 'UPDATE', 'DELETE')
 
@@ -350,13 +356,14 @@ class ChatStorageBackend(ABC):
     def get_fact_change_stats(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
+        user_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Get statistics about fact changes for a user.
 
         Args:
-            user_id: User identifier
+            credentials: Authentication credentials containing user_id (optional if user_id provided)
+            user_id: User identifier (optional, extracted from credentials if not provided)
 
         Returns:
             Dictionary with change statistics or None
@@ -367,14 +374,15 @@ class ChatStorageBackend(ABC):
     def check_processed_message(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
-        message_id: str,
+        user_id: Optional[str] = None,
+        message_id: Optional[str] = None,
     ) -> bool:
         """
         Check if a message has already been processed for fact extraction.
 
         Args:
-            user_id: User identifier
+            credentials: Authentication credentials containing user_id (optional if user_id provided)
+            user_id: User identifier (optional, extracted from credentials if not provided)
             message_id: Message identifier
 
         Returns:
@@ -386,15 +394,16 @@ class ChatStorageBackend(ABC):
     def mark_processed_message(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
-        message_id: str,
-        thread_id: str,
+        user_id: Optional[str] = None,
+        message_id: Optional[str] = None,
+        thread_id: Optional[str] = None,
     ) -> bool:
         """
         Mark a message as processed for fact extraction.
 
         Args:
-            user_id: User identifier
+            credentials: Authentication credentials containing user_id (optional if user_id provided)
+            user_id: User identifier (optional, extracted from credentials if not provided)
             message_id: Message identifier
             thread_id: Thread identifier
 
@@ -407,14 +416,15 @@ class ChatStorageBackend(ABC):
     def check_processed_messages_batch(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
-        message_ids: List[str],
+        user_id: Optional[str] = None,
+        message_ids: Optional[List[str]] = None,
     ) -> List[str]:
         """
         Check which messages have already been processed (batch mode).
 
         Args:
-            user_id: User identifier
+            credentials: Authentication credentials containing user_id (optional if user_id provided)
+            user_id: User identifier (optional, extracted from credentials if not provided)
             message_ids: List of message identifiers to check
 
         Returns:
@@ -426,14 +436,15 @@ class ChatStorageBackend(ABC):
     def mark_processed_messages_batch(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
-        message_data: List[Dict[str, str]],
+        user_id: Optional[str] = None,
+        message_data: Optional[List[Dict[str, str]]] = None,
     ) -> bool:
         """
         Mark multiple messages as processed (batch mode).
 
         Args:
-            user_id: User identifier
+            credentials: Authentication credentials containing user_id (optional if user_id provided)
+            user_id: User identifier (optional, extracted from credentials if not provided)
             message_data: List of dicts with 'message_id' and 'thread_id' keys
 
         Returns:

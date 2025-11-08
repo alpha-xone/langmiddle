@@ -149,3 +149,32 @@ def filter_tool_messages(messages: Sequence[AnyMessage | dict]) -> list[AnyMessa
         'ai'
     """
     return [msg for msg in messages if not is_tool_message(msg)]
+
+
+def split_messages(
+    messages: Sequence[AnyMessage | dict],
+    by_tag: str,
+) -> tuple[list[AnyMessage | dict], list[AnyMessage | dict]]:
+    """Split messages by checking additional_kwargs into tagged and regular messages.
+
+    Args:
+        messages: List of messages (either AnyMessage or dicts) to split.
+        by_tag: The additional_kwargs tag key to use for splitting.
+
+    Returns:
+        A tuple containing two lists:
+        - List of tagged messages
+        - List of untagged messages
+    """
+    tagged_msgs, other_msgs = [], []
+    for msg in messages:
+        if isinstance(msg, dict):
+            additional_kwargs = msg.get("additional_kwargs", {})
+        else:
+            additional_kwargs = getattr(msg, "additional_kwargs", {})
+        if additional_kwargs.get(by_tag):
+            tagged_msgs.append(msg)
+        else:
+            other_msgs.append(msg)
+
+    return tagged_msgs, other_msgs

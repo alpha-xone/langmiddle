@@ -28,8 +28,9 @@ from langchain_core.messages import (
     MessageLikeRepresentation,
 )
 from langchain_core.messages.utils import count_tokens_approximately
+from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
-from langgraph.typing import ContextT
+from langchain.messages import SystemMessage
 
 from langmiddle.memory.facts_manager import (
     apply_fact_actions,
@@ -38,9 +39,16 @@ from langmiddle.memory.facts_manager import (
     query_existing_facts,
 )
 
-from .memory.facts_prompts import DEFAULT_FACTS_EXTRACTOR, DEFAULT_FACTS_UPDATER
+from .memory.facts_manager import ALWAYS_LOADED_NAMESPACES
+from .memory.facts_prompts import (
+    DEFAULT_FACTS_EXTRACTOR,
+    DEFAULT_FACTS_UPDATER,
+    DEFAULT_FACTS_INJECTOR,
+)
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
+from .utils.runtime import get_user_id, auth_storage
+from utils.messages import split_messages
 
 TokenCounter = Callable[[Iterable[MessageLikeRepresentation]], int]
 
@@ -48,8 +56,10 @@ logger = get_graph_logger(__name__)
 # Disable propagation to avoid duplicate logs
 logger._logger.propagate = False
 
+CONTEXT_TAG = "langmiddle/context"
 
-class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
+
+class ContextEngineer(AgentMiddleware):
     """Context Engineer enhanced context for agents through memory extraction and management.
 
     This middleware wraps model calls to provide context engineering capabilities:
@@ -59,8 +69,8 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
     - Prepares context for future model calls with relevant historical information
 
     Implementation roadmap:
-    - Phase 1 (Current): Memory extraction and storage vis supported backends
-    - Phase 2: Context retrieval and injection into model requests
+    - Phase 1: Memory extraction and storage vis supported backends
+    - Phase 2 (Current): Context retrieval and injection into model requests
     - Phase 3: Dynamic context formatting based on relevance scoring
     - Phase 4: Multi-backend support (vector DB, custom storage adapters)
     - Phase 5: Advanced context optimization (token budgeting, semantic compression)
@@ -90,6 +100,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         *,
         extraction_prompt: str = DEFAULT_FACTS_EXTRACTOR,
         update_prompt: str = DEFAULT_FACTS_UPDATER,
+        inject_prompt: str = DEFAULT_FACTS_INJECTOR,
         max_tokens_before_extraction: int | None = None,
         token_counter: TokenCounter = count_tokens_approximately,
         model_kwargs: dict[str, Any] | None = None,
@@ -104,6 +115,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             backend: Database backend to use. Currently only supports "supabase".
             extraction_prompt: Custom prompt string guiding facts extraction.
             update_prompt: Custom prompt string guiding facts updating.
+            inject_prompt: Custom prompt string guiding facts injection.
             max_tokens_before_extraction: Token threshold to trigger extraction.
                 If None, extraction runs on every agent completion.
             token_counter: Function to count tokens in messages.
@@ -125,6 +137,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
 
         self.extraction_prompt = extraction_prompt
         self.update_prompt = update_prompt
+        self.inject_prompt = inject_prompt
 
         self.model: BaseChatModel | None = None
         self.embedder: Embeddings | None = None
@@ -344,7 +357,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
     def after_agent(
         self,
         state: AgentState,
-        runtime: Runtime[Any],
+        runtime: Runtime,
     ) -> dict[str, Any] | None:
         """Extract and manage facts after agent execution completes.
 
@@ -373,19 +386,11 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             return None
 
         # Extract context information
-        user_id: str | None = getattr(runtime.context, "user_id", None)
-        auth_token: str | None = getattr(runtime.context, "auth_token", None)
-
-        if not user_id:
-            if self.backend == "supabase":
-                user_id = self.storage.backend.extract_user_id(
-                    {"jwt_token": auth_token} if auth_token else {}
-                )
-            if self.backend == "firebase":
-                user_id = self.storage.backend.extract_user_id(
-                    {"id_token": auth_token} if auth_token else {}
-                )
-
+        user_id: str | None = get_user_id(
+            runtime=runtime,
+            backend=self.backend,
+            storage_backend=self.storage.backend,
+        )
         if not user_id:
             log_msg = "[after_agent] Missing user_id in context; cannot extract facts"
             if log_msg not in self._logged_messages:
@@ -393,20 +398,19 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                 return {"logs": [logger.error(log_msg)]}
             return None
 
-        # Authenticate with storage backend
-        credentials = None
-        try:
-            credentials = self.storage.backend.prepare_credentials(
-                user_id=user_id,
-                auth_token=auth_token,
-            )
-            self.storage.backend.authenticate(credentials)
-        except Exception as e:
-            logger.error(f"Authentication failed: {e}")
-            # Still set credentials even if authentication fails,
-            # as some backends might not require explicit auth
-            if credentials is None:
-                credentials = {"user_id": user_id}
+        # Prepare credentials and authenticate for storage backend
+        auth_status: dict[str, Any] = auth_storage(
+            runtime=runtime,
+            backend=self.backend,
+            storage_backend=self.storage.backend,
+        )
+        if "error" in auth_status:
+            log_msg = f"[after_agent] Authentication failed: {auth_status['error']}"
+            if log_msg not in self._logged_messages:
+                self._logged_messages.add(log_msg)
+                return {"logs": [logger.error(log_msg)]}
+            return None
+        credentials: dict[str, Any] = auth_status.get("credentials", {})
 
         graph_logs = []
         self._extraction_count += 1
@@ -496,3 +500,85 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                 self._logged_messages.add(log_msg)
 
         return {"logs": graph_logs} if graph_logs else None
+
+    def before_agent(
+        self,
+        state: AgentState,
+        runtime: Runtime,
+    ) -> dict[str, Any] | None:
+        """Context engineering before agent execution.
+        Since system prompt is not in the list of messages, only handle the semantics and episodic memories here.
+
+        Args:
+            state: Current agent state
+            runtime: Runtime context
+
+        Returns:
+            Dict with any modifications and logs to agent state or None
+        """
+        # Read always loaded namespaces from storage
+        messages = state.get("messages", [])
+        if not messages:
+            return None
+
+        if self.storage is None:
+            return None
+
+        # Extract context information
+        user_id: str | None = get_user_id(
+            runtime=runtime,
+            backend=self.backend,
+            storage_backend=self.storage.backend,
+        )
+        if not user_id:
+            log_msg = "[after_agent] Missing user_id in context; cannot extract facts"
+            if log_msg not in self._logged_messages:
+                self._logged_messages.add(log_msg)
+                return {"logs": [logger.error(log_msg)]}
+            return None
+
+        # Prepare credentials and authenticate for storage backend
+        auth_status: dict[str, Any] = auth_storage(
+            runtime=runtime,
+            backend=self.backend,
+            storage_backend=self.storage.backend,
+        )
+        if "error" in auth_status:
+            log_msg = f"[after_agent] Authentication failed: {auth_status['error']}"
+            if log_msg not in self._logged_messages:
+                self._logged_messages.add(log_msg)
+                return {"logs": [logger.error(log_msg)]}
+            return None
+        credentials: dict[str, Any] = auth_status.get("credentials", {})
+
+        # Split messages into context and recent messages
+        context_msgs, recent_msgs = split_messages(messages, by_tag=CONTEXT_TAG)
+
+        current_facts = self.storage.backend.query_facts(
+            credentials=credentials,
+            embedder=self.storage.embedder,
+            namespaces=ALWAYS_LOADED_NAMESPACES,
+        )
+        if current_facts:
+            formatted_facts = "\n".join(
+                fact["content"] for fact in current_facts
+                if fact.get("content")
+            )
+            added_context = [
+                SystemMessage(
+                    content=f"{self.inject_prompt}\n<semantic_memories>\n{formatted_facts}\n</semantic_memories>",
+                    additional_kwargs={CONTEXT_TAG: True},
+                )
+            ]
+        elif context_msgs:
+            added_context = context_msgs
+        else:
+            return None
+
+        return {
+            "messages": [
+                REMOVE_ALL_MESSAGES,
+                *added_context,
+                *recent_msgs,
+            ],
+        }

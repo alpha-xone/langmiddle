@@ -66,3 +66,58 @@ def get_user_id(
             pass
 
     return user_id
+
+
+def auth_storage(
+    runtime: Runtime,
+    backend: str,
+    storage_backend: ChatStorageBackend,
+) -> dict[str, Any]:
+    """Authenticate storage backend using runtime context.
+
+    This function authenticates the provided storage backend using
+    credentials extracted from the runtime context.
+
+    Args:
+        runtime: LangGraph runtime context containing auth_token
+        backend: Backend type ("supabase", "firebase", etc.) for token extraction
+        storage_backend: Storage backend instance for user_id extraction
+
+    Returns:
+        A dictionary indicating authentication status:
+            - "authenticated": bool
+            - "error": Exception (if any occurred during authentication)
+            - "credentials": dict of used credentials
+
+    Examples:
+        >>> auth_status = authenticate_storage(runtime, backend, storage_backend)
+    """
+    credentials: dict[str, Any] = {}
+    auth_token: str | None = getattr(runtime.context, "auth_token", None)
+
+    if auth_token:
+        credentials["auth_token"] = auth_token
+
+    # Extract context information
+    user_id: str | None = get_user_id(
+        runtime=runtime,
+        backend=backend,
+        storage_backend=storage_backend,
+    )
+    auth_token: str | None = getattr(runtime.context, "auth_token", None)
+
+    # Authenticate with storage backend
+    credentials = {
+        "user_id": user_id,
+        "auth_token": auth_token,
+    }
+    try:
+        credentials = storage_backend.prepare_credentials(**credentials)
+        storage_backend.authenticate(credentials)
+    except Exception as e:
+        status = {"authenticated": False, "error": e, "credentials": {}}
+        if user_id:
+            status["credentials"]["user_id"] = user_id
+        return status
+
+    return {"authenticated": True, "credentials": credentials}

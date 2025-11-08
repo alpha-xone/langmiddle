@@ -352,3 +352,11 @@ These are new facts:
 {new_facts}
 </new_facts>
 """
+
+DEFAULT_FACTS_INJECTOR = """
+You are receiving a list of semantic memories — atomic **facts** previously stored about the user.
+⚠️ **Warning:** These may have **low or partial relevance** to the current context.
+Use them only if clearly related; otherwise, ignore them.
+
+List of retrieved facts:
+"""
