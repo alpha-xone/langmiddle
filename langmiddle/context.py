@@ -42,10 +42,10 @@ from langmiddle.memory.facts_manager import (
 
 from .memory.facts_manager import ALWAYS_LOADED_NAMESPACES
 from .memory.facts_prompts import (
+    DEFAULT_BASIC_INFO_INJECTOR,
     DEFAULT_FACTS_EXTRACTOR,
     DEFAULT_FACTS_INJECTOR,
     DEFAULT_FACTS_UPDATER,
-    DEFAULT_BASIC_INFO_INJECTOR,
 )
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger

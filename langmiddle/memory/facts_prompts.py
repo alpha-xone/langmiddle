@@ -364,12 +364,12 @@ List of basid infomation:
 """
 
 DEFAULT_FACTS_INJECTOR = """
-You are receiving a list of semantic memories — atomic **facts** previously stored about the user.
+You are receiving a list of atomic **facts** (or semantic memories) previously stored about the user.
 ⚠️ **Warning:** These may have **low or partial relevance** to the current context.
 Use them only if clearly related; otherwise, ignore them.
 
 List of retrieved facts:
-<semantic_memories>
+<facts>
 {facts}
-</semantic_memories>
+</facts>
 """
