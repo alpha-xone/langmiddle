@@ -353,10 +353,23 @@ These are new facts:
 </new_facts>
 """
 
+DEFAULT_BASIC_INFO_INJECTOR = """
+You are receiving a list of basic information — atomic **facts** previously stored about the user.
+Use them to enhance context where relevant.
+
+List of basid infomation:
+<basic_info>
+{basic_info}
+</basic_info>
+"""
+
 DEFAULT_FACTS_INJECTOR = """
 You are receiving a list of semantic memories — atomic **facts** previously stored about the user.
 ⚠️ **Warning:** These may have **low or partial relevance** to the current context.
 Use them only if clearly related; otherwise, ignore them.
 
 List of retrieved facts:
+<semantic_memories>
+{facts}
+</semantic_memories>
 """

@@ -45,6 +45,7 @@ from .memory.facts_prompts import (
     DEFAULT_FACTS_EXTRACTOR,
     DEFAULT_FACTS_INJECTOR,
     DEFAULT_FACTS_UPDATER,
+    DEFAULT_BASIC_INFO_INJECTOR,
 )
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
@@ -100,7 +101,9 @@ class ContextEngineer(AgentMiddleware):
         *,
         extraction_prompt: str = DEFAULT_FACTS_EXTRACTOR,
         update_prompt: str = DEFAULT_FACTS_UPDATER,
-        inject_prompt: str = DEFAULT_FACTS_INJECTOR,
+        core_namespaces: list[list[str]] = ALWAYS_LOADED_NAMESPACES,
+        core_prompt: str = DEFAULT_BASIC_INFO_INJECTOR,
+        memory_prompt: str = DEFAULT_FACTS_INJECTOR,
         max_tokens_before_extraction: int | None = None,
         token_counter: TokenCounter = count_tokens_approximately,
         model_kwargs: dict[str, Any] | None = None,
@@ -116,6 +119,7 @@ class ContextEngineer(AgentMiddleware):
             extraction_prompt: Custom prompt string guiding facts extraction.
             update_prompt: Custom prompt string guiding facts updating.
             inject_prompt: Custom prompt string guiding facts injection.
+            core_namespaces: List of namespaces to always load into context.
             max_tokens_before_extraction: Token threshold to trigger extraction.
                 If None, extraction runs on every agent completion.
             token_counter: Function to count tokens in messages.
@@ -137,7 +141,10 @@ class ContextEngineer(AgentMiddleware):
 
         self.extraction_prompt = extraction_prompt
         self.update_prompt = update_prompt
-        self.inject_prompt = inject_prompt
+        self.memory_prompt = memory_prompt
+        self.core_prompt = core_prompt
+        self.core_namespaces = core_namespaces
+        self.core_facts: list[dict[str, Any]] = []
 
         self.model: BaseChatModel | None = None
         self.embedder: Embeddings | None = None
@@ -152,7 +159,7 @@ class ContextEngineer(AgentMiddleware):
                 if model_kwargs is None:
                     model_kwargs = {}
                 if "temperature" not in model_kwargs:
-                    model_kwargs["temperature"] = 0.1  # Keep temperature low for consistent extractions
+                    model_kwargs["temperature"] = 0.0  # Keep temperature low for consistent extractions
                 model = init_chat_model(model, **model_kwargs)
             except Exception as e:
                 logger.error(f"Error initializing chat model '{model}': {e}.")
@@ -371,15 +378,15 @@ class ContextEngineer(AgentMiddleware):
         Returns:
             Dict with collected logs or None if no extraction occurred
         """
+        func_name = "ContextEngineer.after_agent"
         # Check if we should extract
         messages: list[AnyMessage] = state.get("messages", [])
-
         if not self._should_extract(messages):
             return None
 
         # Ensure storage is initialized
         if self.storage is None or self.model is None or self.embedder is None:
-            log_msg = "[after_agent] Context engineer not fully initialized; skipping extraction"
+            log_msg = f"[{func_name}] Context engineer not fully initialized; skipping extraction"
             if log_msg not in self._logged_messages:
                 self._logged_messages.add(log_msg)
                 return {"logs": [logger.warning(log_msg)]}
@@ -392,7 +399,7 @@ class ContextEngineer(AgentMiddleware):
             storage_backend=self.storage.backend,
         )
         if not user_id:
-            log_msg = "[after_agent] Missing user_id in context; cannot extract facts"
+            log_msg = f"[{func_name}] Missing user_id in context; cannot extract facts"
             if log_msg not in self._logged_messages:
                 self._logged_messages.add(log_msg)
                 return {"logs": [logger.error(log_msg)]}
@@ -405,7 +412,7 @@ class ContextEngineer(AgentMiddleware):
             storage_backend=self.storage.backend,
         )
         if "error" in auth_status:
-            log_msg = f"[after_agent] Authentication failed: {auth_status['error']}"
+            log_msg = f"[{func_name}] Authentication failed: {auth_status['error']}"
             if log_msg not in self._logged_messages:
                 self._logged_messages.add(log_msg)
                 return {"logs": [logger.error(log_msg)]}
@@ -417,7 +424,7 @@ class ContextEngineer(AgentMiddleware):
 
         try:
             # Step 1: Extract facts from messages
-            log_msg = f"[after_agent] Extracting facts from {len(messages)} messages"
+            log_msg = f"[{func_name}] Extracting facts from {len(messages)} messages"
             if log_msg not in self._logged_messages:
                 graph_logs.append(logger.info(log_msg))
                 self._logged_messages.add(log_msg)
@@ -425,13 +432,13 @@ class ContextEngineer(AgentMiddleware):
             new_facts = self._extract_facts(messages)
 
             if not new_facts:
-                log_msg = "[after_agent] No facts extracted from conversation"
+                log_msg = f"[{func_name}] No facts extracted from conversation"
                 if log_msg not in self._logged_messages:
                     graph_logs.append(logger.debug(log_msg))
                     self._logged_messages.add(log_msg)
                 return {"logs": graph_logs} if graph_logs else None
 
-            log_msg = f"[after_agent] Extracted {len(new_facts)} facts"
+            log_msg = f"[{func_name}] Extracted {len(new_facts)} facts"
             if log_msg not in self._logged_messages:
                 graph_logs.append(logger.info(log_msg))
                 self._logged_messages.add(log_msg)
@@ -440,7 +447,7 @@ class ContextEngineer(AgentMiddleware):
             existing_facts = self._query_existing_facts(new_facts, user_id, credentials)
 
             if existing_facts:
-                log_msg = f"[after_agent] Found {len(existing_facts)} existing related facts"
+                log_msg = f"[{func_name}] Found {len(existing_facts)} existing related facts"
                 if log_msg not in self._logged_messages:
                     graph_logs.append(logger.debug(log_msg))
                     self._logged_messages.add(log_msg)
@@ -463,12 +470,12 @@ class ContextEngineer(AgentMiddleware):
                 )
 
                 if result.get("inserted_count", 0) > 0:
-                    log_msg = f"[after_agent] Inserted {result['inserted_count']} new facts"
+                    log_msg = f"[{func_name}] Inserted {result['inserted_count']} new facts"
                     graph_logs.append(logger.info(log_msg))
 
                 if result.get("errors"):
                     for error in result["errors"]:
-                        log_msg = f"[after_agent] Fact insertion error: {error}"
+                        log_msg = f"[{func_name}] Fact insertion error: {error}"
                         if log_msg not in self._logged_messages:
                             graph_logs.append(logger.error(log_msg))
                             self._logged_messages.add(log_msg)
@@ -479,7 +486,7 @@ class ContextEngineer(AgentMiddleware):
                 # Log statistics
                 if stats["added"] > 0 or stats["updated"] > 0 or stats["deleted"] > 0:
                     log_msg = (
-                        f"[after_agent] Facts updated - "
+                        f"[{func_name}] Facts updated - "
                         f"Added: {stats['added']}, "
                         f"Updated: {stats['updated']}, "
                         f"Deleted: {stats['deleted']}"
@@ -488,13 +495,13 @@ class ContextEngineer(AgentMiddleware):
 
                 # Log errors
                 for error in stats.get("errors", []):
-                    log_msg = f"[after_agent] Fact management error: {error}"
+                    log_msg = f"[{func_name}] Fact management error: {error}"
                     if log_msg not in self._logged_messages:
                         graph_logs.append(logger.error(log_msg))
                         self._logged_messages.add(log_msg)
 
         except Exception as e:
-            log_msg = f"[after_agent] Unexpected error during fact extraction: {e}"
+            log_msg = f"[{func_name}] Unexpected error during fact extraction: {e}"
             if log_msg not in self._logged_messages:
                 graph_logs.append(logger.error(log_msg))
                 self._logged_messages.add(log_msg)
@@ -516,6 +523,7 @@ class ContextEngineer(AgentMiddleware):
         Returns:
             Dict with any modifications and logs to agent state or None
         """
+        func_name = "ContextEngineer.before_agent"
         # Read always loaded namespaces from storage
         messages = state.get("messages", [])
         if not messages:
@@ -531,7 +539,7 @@ class ContextEngineer(AgentMiddleware):
             storage_backend=self.storage.backend,
         )
         if not user_id:
-            log_msg = "[after_agent] Missing user_id in context; cannot extract facts"
+            log_msg = f"[{func_name}] Missing user_id in context; cannot extract facts"
             if log_msg not in self._logged_messages:
                 self._logged_messages.add(log_msg)
                 return {"logs": [logger.error(log_msg)]}
@@ -544,7 +552,7 @@ class ContextEngineer(AgentMiddleware):
             storage_backend=self.storage.backend,
         )
         if "error" in auth_status:
-            log_msg = f"[after_agent] Authentication failed: {auth_status['error']}"
+            log_msg = f"[{func_name}] Authentication failed: {auth_status['error']}"
             if log_msg not in self._logged_messages:
                 self._logged_messages.add(log_msg)
                 return {"logs": [logger.error(log_msg)]}
@@ -552,33 +560,72 @@ class ContextEngineer(AgentMiddleware):
         credentials: dict[str, Any] = auth_status.get("credentials", {})
 
         # Split messages into context and recent messages
-        context_msgs, recent_msgs = split_messages(messages, by_tag=CONTEXT_TAG)
+        context_messages, recent_messages = split_messages(messages, by_tag=CONTEXT_TAG)
 
-        current_facts = self.storage.backend.query_facts(
-            credentials=credentials,
-            embedder=self.storage.embedder,
-            namespaces=ALWAYS_LOADED_NAMESPACES,
-        )
-        if current_facts:
-            formatted_facts = "\n".join(
-                fact["content"] for fact in current_facts
+        # Load core memories
+        if not self.core_facts:
+            self.core_facts = self.storage.backend.query_facts(
+                credentials=credentials,
+                namespaces=self.core_namespaces,
+            )
+        core_ids = [fact["id"] for fact in self.core_facts]
+
+        added_context = []
+        if self.core_facts:
+            formatted_core_facts = "\n".join(
+                f"{i}: {fact['content']}" for i, fact in enumerate(self.core_facts)
                 if fact.get("content")
             )
-            added_context = [
+            added_context.append(
                 SystemMessage(
-                    content=f"{self.inject_prompt}\n<semantic_memories>\n{formatted_facts}\n</semantic_memories>",
+                    content=self.core_prompt.format(basic_info=formatted_core_facts),
                     additional_kwargs={CONTEXT_TAG: True},
                 )
-            ]
-        elif context_msgs:
-            added_context = context_msgs
-        else:
+            )
+
+        # Load context memories
+        current_facts = []
+        if self.embedder is not None:
+            queries: list[str] = []
+            if isinstance(messages[-1].content, str):
+                queries.append(messages[-1].content)
+            if isinstance(messages[-1].content, list):
+                for block in messages[-1].content:
+                    if isinstance(block, str):
+                        queries.append(block)
+
+            for query in queries:
+                current_facts.extend([
+                    fact for fact in self.storage.backend.query_facts(
+                        credentials=credentials,
+                        query_embedding=self.embedder.embed_query(query),
+                    )
+                    if fact.get("content") and fact["id"] not in core_ids
+                ])
+
+            if current_facts:
+                formatted_cur_facts = "\n".join(
+                    f"{i}: {fact['content']}" for i, fact in enumerate(current_facts)
+                )
+                added_context.append(
+                    SystemMessage(
+                        content=self.memory_prompt.format(facts=formatted_cur_facts),
+                        additional_kwargs={CONTEXT_TAG: True},
+                    )
+                )
+
+        if not added_context and context_messages:
+            added_context.extend(context_messages)
+
+        if not added_context:
             return None
 
+        # To add official Summerization middleware for procedure memories
+        logger.info(f"Appending {len(self.core_facts)} core and {len(current_facts)} context messages")
         return {
             "messages": [
                 REMOVE_ALL_MESSAGES,
                 *added_context,
-                *recent_msgs,
+                *recent_messages,
             ],
         }
