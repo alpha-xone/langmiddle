@@ -573,7 +573,8 @@ class ContextEngineer(AgentMiddleware):
         added_context = []
         if self.core_facts:
             formatted_core_facts = "\n".join(
-                f"{i}: {fact['content']}" for i, fact in enumerate(self.core_facts)
+                f"[{' > '.join(fact['namespace'])}] {fact['content']}"
+                for fact in self.core_facts
                 if fact.get("content")
             )
             added_context.append(
@@ -605,7 +606,10 @@ class ContextEngineer(AgentMiddleware):
 
             if current_facts:
                 formatted_cur_facts = "\n".join(
-                    f"{i}: {fact['content']}" for i, fact in enumerate(current_facts)
+                    f"[{' > '.join(fact['namespace'])}] {fact['content']}"
+                    if isinstance(fact.get("namespace"), list) and fact.get("namespace")
+                    else fact['content']
+                    for fact in current_facts
                 )
                 added_context.append(
                     SystemMessage(
