@@ -772,6 +772,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                         self.client.table("facts")
                         .select("*")
                         .eq("user_id", user_id)
+                        .or_(",".join(f"namespace.eq.{{{','.join(ns)}}}" for ns in filter_namespaces))
+                        .limit(match_count)
                     )
                     result = query.execute()
 
@@ -779,21 +781,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                         logger.debug(f"No facts found for user_id={user_id}")
                         return []
 
-                    # Filter by namespace in Python
-                    filtered_facts = []
-                    for fact in result.data:
-                        fact_namespace = fact.get("namespace", [])
-                        # Check if fact's namespace matches any of the filter namespaces
-                        for target_ns in filter_namespaces:
-                            if fact_namespace == target_ns:
-                                filtered_facts.append(fact)
-                                break
-
-                    # Apply limit
-                    filtered_facts = filtered_facts[:match_count]
-
-                    logger.info(f"Filtered {len(filtered_facts)} facts from {len(result.data)} total facts")
-                    return filtered_facts
+                    logger.info(f"Listed {len(result.data)} facts from {user_id} with namespace filtering")
+                    return result.data
                 else:
                     # No namespace filter, just list all facts
                     query = (

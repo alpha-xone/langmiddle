@@ -28,6 +28,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AnyMessage,
     MessageLikeRepresentation,
+    RemoveMessage,
 )
 from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
@@ -631,7 +632,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         logger.info(f"Appending {len(self.core_facts)} core and {len(current_facts)} context messages")
         return {
             "messages": [
-                REMOVE_ALL_MESSAGES,
+                RemoveMessage(id=REMOVE_ALL_MESSAGES),
                 *added_context,
                 *recent_messages,
             ],

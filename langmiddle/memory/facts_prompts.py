@@ -357,7 +357,7 @@ DEFAULT_BASIC_INFO_INJECTOR = """
 You are receiving a list of basic information — atomic **facts** previously stored about the user.
 Use them to enhance context where relevant.
 
-List of basid infomation:
+List of basic information:
 <basic_info>
 {basic_info}
 </basic_info>
