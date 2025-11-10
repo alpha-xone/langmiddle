@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from langgraph.runtime import Runtime
 
 if TYPE_CHECKING:
-    from langmiddle.storage.base import ChatStorageBackend
+    from ..storage.base import ChatStorageBackend
 
 
 def get_user_id(

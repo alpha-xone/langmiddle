@@ -765,29 +765,51 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         try:
             # If no query_embedding, list all facts (no similarity search)
             if query_embedding is None:
-                query = (
-                    self.client.table("facts")
-                    .select("*")
-                    .eq("user_id", user_id)
-                )
-
-                # Add namespace filter if provided
-                # For PostgreSQL arrays, we need to match exact arrays
+                # If namespace filter is provided, fetch all user facts and filter in Python
+                # This is more reliable than PostgREST array comparison syntax
                 if filter_namespaces:
-                    # Filter for facts where namespace matches any of the provided namespace arrays
-                    # This uses PostgreSQL's array comparison operators
-                    for ns in filter_namespaces:
-                        if ns:  # Only add filter if namespace is not empty
-                            query = query.or_(f"namespace.eq.{{{','.join(ns)}}}")
+                    query = (
+                        self.client.table("facts")
+                        .select("*")
+                        .eq("user_id", user_id)
+                    )
+                    result = query.execute()
 
-                result = query.limit(match_count).execute()
+                    if not result.data:
+                        logger.debug(f"No facts found for user_id={user_id}")
+                        return []
 
-                if not result.data:
-                    logger.debug("No facts found")
-                    return []
+                    # Filter by namespace in Python
+                    filtered_facts = []
+                    for fact in result.data:
+                        fact_namespace = fact.get("namespace", [])
+                        # Check if fact's namespace matches any of the filter namespaces
+                        for target_ns in filter_namespaces:
+                            if fact_namespace == target_ns:
+                                filtered_facts.append(fact)
+                                break
 
-                logger.info(f"Listed {len(result.data)} facts")
-                return result.data
+                    # Apply limit
+                    filtered_facts = filtered_facts[:match_count]
+
+                    logger.info(f"Filtered {len(filtered_facts)} facts from {len(result.data)} total facts")
+                    return filtered_facts
+                else:
+                    # No namespace filter, just list all facts
+                    query = (
+                        self.client.table("facts")
+                        .select("*")
+                        .eq("user_id", user_id)
+                        .limit(match_count)
+                    )
+                    result = query.execute()
+
+                    if not result.data:
+                        logger.debug(f"No facts found for user_id={user_id}")
+                        return []
+
+                    logger.info(f"Listed {len(result.data)} facts for user_id={user_id}")
+                    return result.data
 
             # Vector similarity search mode
             if not model_dimension:
