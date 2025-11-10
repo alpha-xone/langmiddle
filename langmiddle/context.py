@@ -548,7 +548,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                 self.core_facts = self.storage.backend.query_facts(
                     credentials=credentials,
                     filter_namespaces=self.core_namespaces,
-                    limit=30,
+                    match_count=30,
                 )
                 if self.core_facts:
                     logger.debug(f"Loaded {len(self.core_facts)} core facts")
