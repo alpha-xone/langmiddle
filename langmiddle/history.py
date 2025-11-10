@@ -6,7 +6,6 @@ chat messages to databases (SQLite, Supabase, Firebase) after each model respons
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,6 +27,8 @@ load_dotenv()
 logger = get_graph_logger(__name__)
 # Disable propagation to avoid duplicate logs (LangGraph handles the logging)
 logger._logger.propagate = False
+
+LOGS_KEY = "langmiddle:history:trace"
 
 __all__ = ["StorageContext", "ToolRemover", "ChatSaver"]
 
@@ -188,6 +189,7 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
     This middleware automatically captures and persists conversation history
     to the database, including message content, and metadata.
     Supports multiple storage backends: SQLite (default), Supabase, and Firebase.
+    Returns operation traces under 'langmiddle:history:trace' for backend monitoring.
 
     Usage:
         Using SQLite in-memory (default - easiest to get started):
@@ -286,6 +288,10 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         Raises:
             ValueError: If save_interval < 1 or backend is not supported.
             Exception: If storage backend initialization fails.
+
+        Note:
+            Save operations return trace logs under the 'langmiddle:history:trace' key
+            for backend monitoring and debugging.
         """
         super().__init__()
 
@@ -296,7 +302,6 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         self.save_interval: int = save_interval
         self._model_call_count: int = 0
         self._saved_msg_ids: set[str] = set()  # Persistent tracking of saved message IDs
-        self._logged_messages: set[str] = set()  # Track logged messages to avoid duplicates
 
         # Set default db_path for SQLite if not provided
         if backend == "sqlite" and "db_path" not in backend_kwargs:
@@ -325,7 +330,7 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
             runtime: Runtime context with user_id, thread_id, and auth_token.
 
         Returns:
-            Dict with collected logs or None if no save occurred.
+            Dict with trace logs under 'langmiddle:history:trace' key, or None
         """
         # Increment call count
         self._model_call_count += 1
@@ -344,22 +349,14 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
 
         # Validate required context
         if not thread_id:
-            log_msg: str = "[after_agent] Missing thread_id in context; cannot save chat history"
-            if log_msg not in self._logged_messages:
-                graph_logs = [logger.error(log_msg)]
-                self._logged_messages.add(log_msg)
-                return {"logs": graph_logs}
-            return None
+            logger.error("Missing thread_id in context; cannot save chat history")
+            return {LOGS_KEY: ["ERROR: Missing thread_id"]}
 
         # Get messages from state
         messages: list[AnyMessage] = state.get("messages", [])
 
         if not messages:
-            if logger.isEnabledFor(logging.DEBUG):
-                log_msg: str = f"[after_agent] No messages to save for thread {thread_id}"
-                if log_msg not in self._logged_messages:
-                    self._logged_messages.add(log_msg)
-                    return {"logs": [logger.debug(log_msg)]}
+            logger.debug(f"No messages to save for thread {thread_id}")
             return None
 
         custom_state = None
@@ -386,7 +383,7 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         if "saved_msg_ids" in result:
             self._saved_msg_ids.update(result["saved_msg_ids"])
 
-        # Log the result and collect graph logs
+        # Log the result and collect trace logs
         return self._log_save_result(result, thread_id)
 
     def _prepare_credentials(
@@ -420,32 +417,32 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         result: dict[str, Any],
         thread_id: str,
     ) -> dict[str, Any] | None:
-        """Log the save result and return graph logs.
+        """Log the save result and return trace logs.
 
         Args:
             result: Result dictionary from save_chat_history.
             thread_id: Thread identifier for logging.
 
         Returns:
-            Dict with logs key containing graph logs, or None if no logs.
+            Dict with trace logs under 'langmiddle:history:trace' key, or None
         """
-        graph_logs = []
+        trace_logs = []
 
         if result["success"]:
             if result["saved_count"] > 0:
-                log_msg: str = (
-                    f"[after_agent] Saved {result['saved_count']} messages for thread {thread_id} "
-                    f"(skipped {result.get('skipped_count', 0)} already saved)"
-                )
-                if log_msg not in self._logged_messages:
-                    graph_logs.append(logger.info(log_msg))
-                    self._logged_messages.add(log_msg)
+                saved = result["saved_count"]
+                skipped = result.get("skipped_count", 0)
+                summary = f"Saved {saved} messages to thread {thread_id}"
+                if skipped > 0:
+                    summary += f" (skipped {skipped} duplicates)"
+                trace_logs.append(summary)
+                logger.info(summary)
+            else:
+                logger.debug(f"No new messages to save for thread {thread_id}")
         else:
-            # Only log each unique error once per session
+            # Log errors
             for error in result["errors"]:
-                log_msg: str = f"[after_agent] Chat history save error: {error}"
-                if log_msg not in self._logged_messages:
-                    graph_logs.append(logger.error(log_msg))
-                    self._logged_messages.add(log_msg)
+                trace_logs.append(f"ERROR: {error}")
+                logger.error(f"Chat history save error: {error}")
 
-        return {"logs": graph_logs} if graph_logs else None
+        return {LOGS_KEY: trace_logs} if trace_logs else None
