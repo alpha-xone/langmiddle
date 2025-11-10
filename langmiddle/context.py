@@ -447,9 +447,35 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
 
             if not actions:
                 # If no actions determined, just insert new facts
-                contents = [f["content"] for f in new_facts]
-                embeddings = self.embedder.embed_documents(contents)
-                model_dimension = len(embeddings[0]) if embeddings else 1536
+                contents = [f["content"] for f in new_facts if f.get("content")]
+
+                if not contents:
+                    logger.warning("No valid content in new facts to insert")
+                    return None
+
+                try:
+                    embeddings = self.embedder.embed_documents(contents)
+
+                    # Validate embeddings
+                    if not embeddings or not all(embeddings):
+                        logger.error("Failed to generate embeddings for facts")
+                        trace_logs.append("ERROR: Failed to generate embeddings")
+                        return {LOGS_KEY: trace_logs}
+
+                    # Ensure all embeddings have the same dimension
+                    embedding_dims = [len(emb) for emb in embeddings if emb]
+                    if not embedding_dims or len(set(embedding_dims)) > 1:
+                        dims_info = set(embedding_dims) if embedding_dims else 'empty'
+                        logger.error(f"Inconsistent embedding dimensions: {dims_info}")
+                        trace_logs.append(f"ERROR: Inconsistent embedding dimensions: {dims_info}")
+                        return {LOGS_KEY: trace_logs}
+
+                    model_dimension = embedding_dims[0]
+
+                except Exception as e:
+                    logger.error(f"Error generating embeddings: {e}")
+                    trace_logs.append(f"ERROR: Failed to generate embeddings - {e}")
+                    return {LOGS_KEY: trace_logs}
 
                 result = self.storage.backend.insert_facts(
                     credentials=credentials,

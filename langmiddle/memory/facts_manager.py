@@ -365,6 +365,12 @@ def apply_fact_actions(
                 logger.debug(f"Generating embeddings for {len(contents_to_embed)} ADD actions")
                 new_embeddings = embedder.embed_documents(contents_to_embed)
 
+                # Validate generated embeddings
+                if not new_embeddings or not all(new_embeddings):
+                    logger.error("Failed to generate valid embeddings for ADD actions")
+                    stats["errors"].append("Failed to generate embeddings for ADD actions")
+                    return stats
+
                 # Fill in the generated embeddings
                 for i, embedding in enumerate(new_embeddings):
                     idx = content_indices[i]
@@ -374,7 +380,24 @@ def apply_fact_actions(
                     if embeddings_cache is not None:
                         embeddings_cache[add_contents[idx]] = embedding
 
-            model_dimension = len(add_embeddings[0]) if add_embeddings else 1536
+            # Validate all embeddings are present and have consistent dimensions
+            if not all(add_embeddings):
+                logger.error("Some ADD embeddings are missing")
+                stats["errors"].append("Incomplete embeddings for ADD actions")
+                return stats
+
+            embedding_dims = [len(emb) for emb in add_embeddings if emb]
+            if not embedding_dims:
+                logger.error("No valid embeddings for ADD actions")
+                stats["errors"].append("No valid embeddings generated")
+                return stats
+
+            if len(set(embedding_dims)) > 1:
+                logger.error(f"Inconsistent embedding dimensions in ADD actions: {set(embedding_dims)}")
+                stats["errors"].append(f"Inconsistent embedding dimensions: {set(embedding_dims)}")
+                return stats
+
+            model_dimension = embedding_dims[0]
 
             for action_item, embedding in zip(add_actions, add_embeddings):
                 try:
@@ -430,6 +453,15 @@ def apply_fact_actions(
                 logger.debug(f"Generating embeddings for {len(contents_to_embed)} UPDATE actions")
                 new_embeddings = embedder.embed_documents(contents_to_embed)
 
+                # Validate generated embeddings
+                if not new_embeddings or not all(new_embeddings):
+                    logger.error("Failed to generate valid embeddings for UPDATE actions")
+                    stats["errors"].append("Failed to generate embeddings for UPDATE actions")
+                    # Continue with other actions
+                    for action_item in update_actions:
+                        stats["skipped"] += 1
+                    return stats
+
                 # Fill in the generated embeddings
                 for i, embedding in enumerate(new_embeddings):
                     idx = content_indices[i]
@@ -438,6 +470,13 @@ def apply_fact_actions(
                     # Update cache if provided
                     if embeddings_cache is not None:
                         embeddings_cache[update_contents[idx]] = embedding
+
+            # Validate embeddings before updating
+            if not all(update_embeddings):
+                logger.error("Some UPDATE embeddings are missing")
+                stats["errors"].append("Incomplete embeddings for UPDATE actions")
+                stats["skipped"] += len(update_actions)
+                return stats
 
             for action_item, embedding in zip(update_actions, update_embeddings):
                 try:

@@ -428,13 +428,49 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             return False
 
     def get_or_create_embedding_table(self, dimension: int) -> bool:
-        """Ensure embedding table exists (internal helper)."""
+        """Ensure embedding table exists (internal helper).
+
+        Note: This method should only be called from within @with_auth_retry
+        decorated methods to ensure proper authentication.
+
+        Args:
+            dimension: The embedding vector dimension
+
+        Returns:
+            True if table exists or was created successfully, False otherwise
+        """
         try:
+            # Validate dimension
+            if not isinstance(dimension, int) or dimension <= 0:
+                logger.error(f"Invalid dimension: {dimension}. Must be a positive integer.")
+                return False
+
+            # Call the database function to ensure table exists
             self.client.rpc("ensure_embedding_table", {"p_dimension": dimension}).execute()
             logger.debug(f"Embedding table for dimension {dimension} is ready")
             return True
         except Exception as e:
-            logger.error(f"Error creating embedding table for dimension {dimension}: {e}")
+            error_msg = str(e)
+
+            # Provide more detailed error messages
+            if "function" in error_msg.lower() and "does not exist" in error_msg.lower():
+                logger.error(
+                    "Database function 'ensure_embedding_table' not found. "
+                    "Please run the setup SQL scripts to create required functions."
+                )
+            elif "permission" in error_msg.lower() or "security definer" in error_msg.lower():
+                logger.error(
+                    f"Permission denied when creating embedding table for dimension {dimension}. "
+                    f"Check database user permissions."
+                )
+            elif "vector" in error_msg.lower():
+                logger.error(
+                    f"Vector extension error for dimension {dimension}. "
+                    f"Ensure pgvector extension is installed and enabled."
+                )
+            else:
+                logger.error(f"Error creating embedding table for dimension {dimension}: {e}")
+
             return False
 
     # =========================================================================
@@ -680,9 +716,41 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                     "errors": ["Embeddings count must match facts count"]
                 }
 
-            if not model_dimension:
-                model_dimension = len(embeddings[0])
+            # Validate that all embeddings are non-empty and have consistent dimensions
+            if not all(embeddings):
+                return {
+                    "inserted_count": 0,
+                    "fact_ids": [],
+                    "errors": ["All embeddings must be non-empty"]
+                }
 
+            embedding_dims = [len(emb) for emb in embeddings if emb]
+            if not embedding_dims:
+                return {
+                    "inserted_count": 0,
+                    "fact_ids": [],
+                    "errors": ["No valid embeddings provided"]
+                }
+
+            if len(set(embedding_dims)) > 1:
+                return {
+                    "inserted_count": 0,
+                    "fact_ids": [],
+                    "errors": [f"Inconsistent embedding dimensions: {set(embedding_dims)}"]
+                }
+
+            if not model_dimension:
+                model_dimension = embedding_dims[0]
+
+            # Verify that all embeddings match the specified dimension
+            if any(len(emb) != model_dimension for emb in embeddings):
+                return {
+                    "inserted_count": 0,
+                    "fact_ids": [],
+                    "errors": [f"All embeddings must have dimension {model_dimension}"]
+                }
+
+            # Ensure embedding table exists (authentication is already handled by decorator)
             if not self.get_or_create_embedding_table(model_dimension):
                 return {
                     "inserted_count": 0,
@@ -693,6 +761,11 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         # Insert facts
         for idx, fact in enumerate(normalized_facts):
             try:
+                # Validate fact content
+                if not fact.get("content"):
+                    errors.append(f"Fact at index {idx} has no content, skipping")
+                    continue
+
                 fact_data = {
                     "user_id": user_id,
                     "content": fact.get("content"),
@@ -715,12 +788,44 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
 
                 # Insert embedding if provided
                 if embeddings and idx < len(embeddings):
+                    embedding = embeddings[idx]
+
+                    # Validate embedding before insertion
+                    if not embedding:
+                        errors.append(f"Fact {fact_id}: Empty embedding, skipping vector insertion")
+                        continue
+
+                    if len(embedding) != model_dimension:
+                        errors.append(
+                            f"Fact {fact_id}: Embedding dimension {len(embedding)} "
+                            f"doesn't match expected {model_dimension}, skipping"
+                        )
+                        continue
+
                     try:
-                        embedding_data = {"fact_id": fact_id, "embedding": embeddings[idx]}
                         table_name = f"fact_embeddings_{model_dimension}"
-                        self.client.table(table_name).insert(embedding_data).execute()
+                        embedding_data = {"fact_id": fact_id, "embedding": embedding}
+                        emb_result = self.client.table(table_name).insert(embedding_data).execute()
+
+                        if not emb_result.data:
+                            errors.append(f"Fact {fact_id}: Failed to insert embedding (no data returned)")
+                        else:
+                            logger.debug(f"Successfully inserted embedding for fact {fact_id}")
                     except Exception as e:
-                        errors.append(f"Inserted fact {fact_id} but failed embedding: {e}")
+                        error_msg = str(e)
+                        # Provide more helpful error messages
+                        if "does not exist" in error_msg.lower() or "relation" in error_msg.lower():
+                            errors.append(
+                                f"Fact {fact_id}: Embedding table 'fact_embeddings_{model_dimension}' not found. "
+                                f"Table creation may have failed."
+                            )
+                        elif "permission" in error_msg.lower() or "rls" in error_msg.lower():
+                            errors.append(
+                                f"Fact {fact_id}: Permission denied for embedding table. "
+                                f"Check RLS policies."
+                            )
+                        else:
+                            errors.append(f"Fact {fact_id}: Failed to insert embedding - {e}")
             except Exception as e:
                 errors.append(f"Error inserting fact at index {idx}: {e}")
 
