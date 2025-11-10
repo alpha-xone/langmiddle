@@ -31,7 +31,7 @@ from langchain_core.messages import (
 from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
-from utils.messages import split_messages
+from langgraph.typing import ContextT
 
 from langmiddle.memory.facts_manager import (
     apply_fact_actions,
@@ -49,6 +49,7 @@ from .memory.facts_prompts import (
 )
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
+from .utils.messages import split_messages
 from .utils.runtime import auth_storage, get_user_id
 
 TokenCounter = Callable[[Iterable[MessageLikeRepresentation]], int]
@@ -60,7 +61,7 @@ logger._logger.propagate = False
 CONTEXT_TAG = "langmiddle/context"
 
 
-class ContextEngineer(AgentMiddleware):
+class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
     """Context Engineer enhanced context for agents through memory extraction and management.
 
     This middleware wraps model calls to provide context engineering capabilities:
@@ -364,7 +365,7 @@ class ContextEngineer(AgentMiddleware):
     def after_agent(
         self,
         state: AgentState,
-        runtime: Runtime,
+        runtime: Runtime[Any],
     ) -> dict[str, Any] | None:
         """Extract and manage facts after agent execution completes.
 
@@ -511,7 +512,7 @@ class ContextEngineer(AgentMiddleware):
     def before_agent(
         self,
         state: AgentState,
-        runtime: Runtime,
+        runtime: Runtime[Any],
     ) -> dict[str, Any] | None:
         """Context engineering before agent execution.
         Since system prompt is not in the list of messages, only handle the semantics and episodic memories here.

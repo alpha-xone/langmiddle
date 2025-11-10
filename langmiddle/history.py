@@ -15,6 +15,7 @@ from langchain.messages import RemoveMessage
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
+from langgraph.typing import ContextT
 
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
@@ -75,7 +76,7 @@ class StorageContext:
     auth_token: str | None = None
 
 
-class ToolRemover(AgentMiddleware):
+class ToolRemover(AgentMiddleware[AgentState, ContextT]):
     """
     Middleware to remove tool messages from chat history.
 
@@ -112,7 +113,7 @@ class ToolRemover(AgentMiddleware):
     def before_agent(
         self,
         state: AgentState,
-        runtime: Runtime,
+        runtime: Runtime[Any],
     ) -> dict[str, Any] | None:
         """
         Filter tool messages from the state before agent call.
@@ -178,7 +179,7 @@ class ToolRemover(AgentMiddleware):
         return None
 
 
-class ChatSaver(AgentMiddleware):
+class ChatSaver(AgentMiddleware[AgentState, ContextT]):
     """Middleware to save chat history to various storage backends after each model response.
 
     This middleware automatically captures and persists conversation history
@@ -309,7 +310,7 @@ class ChatSaver(AgentMiddleware):
     def after_agent(
         self,
         state: AgentState,
-        runtime: Runtime,
+        runtime: Runtime[Any],
     ) -> dict[str, Any] | None:
         """Save chat history after agent execution completes.
 
