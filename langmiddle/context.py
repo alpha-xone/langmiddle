@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
+from dotenv import load_dotenv
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.chat_models import init_chat_model
 from langchain.embeddings import Embeddings, init_embeddings
@@ -33,14 +34,13 @@ from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
 from langgraph.typing import ContextT
 
-from langmiddle.memory.facts_manager import (
+from .memory.facts_manager import (
+    ALWAYS_LOADED_NAMESPACES,
     apply_fact_actions,
     extract_facts,
     get_actions,
     query_existing_facts,
 )
-
-from .memory.facts_manager import ALWAYS_LOADED_NAMESPACES
 from .memory.facts_prompts import (
     DEFAULT_BASIC_INFO_INJECTOR,
     DEFAULT_FACTS_EXTRACTOR,
@@ -53,6 +53,8 @@ from .utils.messages import split_messages
 from .utils.runtime import auth_storage, get_user_id
 
 TokenCounter = Callable[[Iterable[MessageLikeRepresentation]], int]
+
+load_dotenv()
 
 logger = get_graph_logger(__name__)
 # Disable propagation to avoid duplicate logs
@@ -567,7 +569,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         if not self.core_facts:
             self.core_facts = self.storage.backend.query_facts(
                 credentials=credentials,
-                namespaces=self.core_namespaces,
+                filter_namespaces=self.core_namespaces,
             )
         core_ids = [fact["id"] for fact in self.core_facts]
 
