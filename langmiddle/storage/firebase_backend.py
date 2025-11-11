@@ -453,9 +453,9 @@ class FirebaseStorageBackend(ChatStorageBackend):
     def query_facts(
         self,
         credentials: Optional[Dict[str, Any]],
-        query_embedding: List[float],
-        user_id: str,
-        model_dimension: int,
+        query_embedding: Optional[List[float]] = None,
+        user_id: Optional[str] = None,
+        model_dimension: Optional[int] = None,
         match_threshold: float = 0.75,
         match_count: int = 10,
         filter_namespaces: Optional[List[List[str]]] = None,
@@ -470,7 +470,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
+        user_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Get a fact by its ID."""
         raise NotImplementedError(
@@ -482,8 +482,8 @@ class FirebaseStorageBackend(ChatStorageBackend):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
-        updates: Dict[str, Any],
+        user_id: Optional[str] = None,
+        updates: Optional[Dict[str, Any]] = None,
         embedding: Optional[List[float]] = None,
     ) -> bool:
         """Update a fact's content and/or metadata."""
@@ -496,7 +496,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
+        user_id: Optional[str] = None,
     ) -> bool:
         """Delete a fact and its embeddings."""
         raise NotImplementedError(
@@ -507,8 +507,8 @@ class FirebaseStorageBackend(ChatStorageBackend):
     def check_processed_message(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
-        message_id: str,
+        user_id: Optional[str] = None,
+        message_id: Optional[str] = None,
     ) -> bool:
         """Check if a message has already been processed."""
         raise NotImplementedError(
@@ -519,9 +519,9 @@ class FirebaseStorageBackend(ChatStorageBackend):
     def mark_processed_message(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
-        message_id: str,
-        thread_id: str,
+        user_id: Optional[str] = None,
+        message_id: Optional[str] = None,
+        thread_id: Optional[str] = None,
     ) -> bool:
         """Mark a message as processed."""
         raise NotImplementedError(
@@ -532,8 +532,8 @@ class FirebaseStorageBackend(ChatStorageBackend):
     def check_processed_messages_batch(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
-        message_ids: List[str],
+        user_id: Optional[str] = None,
+        message_ids: Optional[List[str]] = None,
     ) -> List[str]:
         """Check which messages have already been processed (batch mode)."""
         raise NotImplementedError(
@@ -544,8 +544,8 @@ class FirebaseStorageBackend(ChatStorageBackend):
     def mark_processed_messages_batch(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
-        message_data: List[Dict[str, str]],
+        user_id: Optional[str] = None,
+        message_data: Optional[List[Dict[str, str]]] = None,
     ) -> bool:
         """Mark multiple messages as processed (batch mode)."""
         raise NotImplementedError(

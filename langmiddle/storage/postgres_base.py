@@ -534,9 +534,9 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
     def query_facts(
         self,
         credentials: Optional[Dict[str, Any]],
-        query_embedding: List[float],
-        user_id: str,
-        model_dimension: int,
+        query_embedding: Optional[List[float]] = None,
+        user_id: Optional[str] = None,
+        model_dimension: Optional[int] = None,
         match_threshold: float = 0.75,
         match_count: int = 10,
         filter_namespaces: Optional[List[List[str]]] = None,
@@ -551,7 +551,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
+        user_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Get a fact by its ID."""
         raise NotImplementedError(
@@ -563,8 +563,8 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
-        updates: Dict[str, Any],
+        user_id: Optional[str] = None,
+        updates: Optional[Dict[str, Any]] = None,
         embedding: Optional[List[float]] = None,
     ) -> bool:
         """Update a fact's content and/or metadata."""
@@ -577,7 +577,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
+        user_id: Optional[str] = None,
     ) -> bool:
         """Delete a fact and its embeddings."""
         raise NotImplementedError(
@@ -589,7 +589,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
         self,
         credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: str,
+        user_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get complete history for a specific fact."""
         raise NotImplementedError(
@@ -600,7 +600,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
     def get_recent_fact_changes(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
+        user_id: Optional[str] = None,
         limit: int = 50,
         operation: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
@@ -613,7 +613,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
     def get_fact_change_stats(
         self,
         credentials: Optional[Dict[str, Any]],
-        user_id: str,
+        user_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Get statistics about fact changes for a user."""
         raise NotImplementedError(
