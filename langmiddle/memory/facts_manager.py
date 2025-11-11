@@ -24,6 +24,25 @@ ALWAYS_LOADED_NAMESPACES = [
     ["user", "preferences", "topics"],
 ]
 
+__all__ = [
+    "ALWAYS_LOADED_NAMESPACES",
+    "extract_facts",
+    "get_actions",
+    "apply_fact_actions",
+    "query_existing_facts",
+    "formatted_facts",
+]
+
+
+def formatted_facts(facts: list[dict]) -> str:
+    """Format a list of fact dictionaries into a readable string."""
+    return "\n".join(
+        f"- [{' > '.join(fact['namespace'])}] {fact['content']}"
+        if isinstance(fact.get("namespace"), list) and fact.get("namespace")
+        else fact['content']
+        for fact in facts if fact.get("content")
+    )
+
 
 def extract_facts(
     model: BaseChatModel,
