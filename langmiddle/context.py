@@ -39,6 +39,7 @@ from .memory.facts_manager import (
     ALWAYS_LOADED_NAMESPACES,
     apply_fact_actions,
     extract_facts,
+    formatted_facts,
     get_actions,
     query_existing_facts,
 )
@@ -158,6 +159,8 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         self.core_prompt = core_prompt
         self.core_namespaces = core_namespaces
         self.core_facts: list[dict[str, Any]] = []
+        # Maintain a list of current facts for previous rounds of communications
+        self.current_facts: list[dict[str, Any]] = []
 
         self.model: BaseChatModel | None = None
         self.embedder: Embeddings | None = None
@@ -579,24 +582,18 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                 if self.core_facts:
                     logger.debug(f"Loaded {len(self.core_facts)} core facts")
 
-            core_ids = [fact["id"] for fact in self.core_facts]
+            curr_ids = [fact["id"] for fact in self.core_facts + self.current_facts if fact.get("id")]
 
             added_context = []
             if self.core_facts:
-                formatted_core_facts = "\n".join(
-                    f"[{' > '.join(fact['namespace'])}] {fact['content']}"
-                    for fact in self.core_facts
-                    if fact.get("content")
-                )
                 added_context.append(
                     SystemMessage(
-                        content=self.core_prompt.format(basic_info=formatted_core_facts),
+                        content=self.core_prompt.format(basic_info=formatted_facts(self.core_facts)),
                         additional_kwargs={CONTEXT_TAG: True},
                     )
                 )
 
             # Load context-specific memories
-            current_facts = []
             if self.embedder is not None:
                 queries: list[str] = []
                 if isinstance(messages[-1].content, str):
@@ -607,25 +604,19 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                             queries.append(block)
 
                 for query in queries:
-                    current_facts.extend([
+                    self.current_facts.extend([
                         fact for fact in self.storage.backend.query_facts(
                             credentials=credentials,
                             query_embedding=self.embedder.embed_query(query),
                         )
-                        if fact.get("content") and fact["id"] not in core_ids
+                        if fact.get("content") and fact.get("id") and fact["id"] not in curr_ids
                     ])
 
-                if current_facts:
-                    logger.debug(f"Retrieved {len(current_facts)} context-specific facts")
-                    formatted_cur_facts = "\n".join(
-                        f"[{' > '.join(fact['namespace'])}] {fact['content']}"
-                        if isinstance(fact.get("namespace"), list) and fact.get("namespace")
-                        else fact['content']
-                        for fact in current_facts
-                    )
+                if self.current_facts:
+                    logger.debug(f"Applying {len(self.current_facts)} context-specific facts")
                     added_context.append(
                         SystemMessage(
-                            content=self.memory_prompt.format(facts=formatted_cur_facts),
+                            content=self.memory_prompt.format(facts=formatted_facts(self.current_facts)),
                             additional_kwargs={CONTEXT_TAG: True},
                         )
                     )
@@ -638,7 +629,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
 
             # Log summary of injected context
             total_core = len(self.core_facts)
-            total_context = len(current_facts)
+            total_context = len(self.current_facts)
             if total_core > 0 or total_context > 0:
                 summary = f"Injected {total_core} core + {total_context} context facts"
                 trace_logs.append(summary)
