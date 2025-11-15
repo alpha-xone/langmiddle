@@ -54,3 +54,13 @@ class ActionItem(CurrentItem):
 class FactsActions(BaseModel):
     """Model to represent a list of facts updates."""
     actions: List[ActionItem] = Field(..., description="List of facts updates.")
+
+
+class AtomicQueries(BaseModel):
+    """Model to represent atomic query for existing facts."""
+    queries: List[str] = Field(..., description="The atomic query strings to search for existing facts.")
+
+
+class CuesResponse(BaseModel):
+    """Response model for generated cues."""
+    cues: list[str] = Field(description="List of retrieval cue questions")

@@ -378,10 +378,17 @@ begin
   -- Create table
   execute format(
     'create table if not exists public.%I (
-      fact_id uuid primary key references public.facts(id) on delete cascade,
-      embedding vector(%s) not null
+      id uuid primary key default gen_random_uuid(),
+      fact_id uuid not null references public.facts(id) on delete cascade,
+      user_id uuid not null references auth.users(id) on delete cascade,
+      embedding vector(%s) not null,
+      fact_type text not null default ''fact'' check (fact_type in (''fact'', ''cue'')),
+      cue_text text,
+      created_at timestamptz not null default now(),
+      occurred_at timestamptz,
+      constraint %I unique (fact_id, user_id, fact_type, cue_text)
     )',
-    v_table_name, p_dimension
+    v_table_name, p_dimension, v_table_name || '_unique'
   );
 
   -- Create vector index (drop first if exists)
@@ -390,6 +397,12 @@ begin
     'create index %I on public.%I using ivfflat (embedding vector_l2_ops) with (lists = 100)',
     v_table_name || '_idx', v_table_name
   );
+
+  -- Create indexes for efficient queries
+  execute format('create index %I on public.%I (fact_id)', v_table_name || '_fact_id_idx', v_table_name);
+  execute format('create index %I on public.%I (fact_type)', v_table_name || '_fact_type_idx', v_table_name);
+  execute format('create index %I on public.%I (created_at desc)', v_table_name || '_created_at_idx', v_table_name);
+  execute format('create index %I on public.%I (occurred_at desc)', v_table_name || '_occurred_at_idx', v_table_name);
 
   -- Enable RLS
   execute format('alter table public.%I enable row level security', v_table_name);
@@ -453,23 +466,29 @@ begin
     raise exception 'Embedding table for dimension % does not exist', p_dimension;
   end if;
 
-  -- Build query
+  -- Build query with deduplication by fact_id (return best match per fact)
+  -- Multiplier for internal query to account for duplicates (fact + multiple cues)
+  -- Estimate: 1 fact + ~4 cues = 5x multiplier
   v_query := format(
-    'select
-      f.id,
-      f.content,
-      f.namespace,
-      f.language,
-      f.intensity,
-      f.confidence,
-      f.model_dimension,
-      f.created_at,
-      f.updated_at,
-      1 - (e.embedding <=> $1) as similarity
-    from public.facts f
-    join public.%I e on e.fact_id = f.id
-    where f.user_id = $2
-      and f.model_dimension = $3',
+    'with ranked_results as (
+      select
+        f.id,
+        f.content,
+        f.namespace,
+        f.language,
+        f.intensity,
+        f.confidence,
+        f.model_dimension,
+        f.created_at,
+        f.updated_at,
+        (1 - (e.embedding <=> $1)) as similarity,
+        e.fact_type,
+        e.cue_text,
+        row_number() over (partition by f.id order by (1 - (e.embedding <=> $1)) desc) as rn
+      from public.facts f
+      inner join public.%I e on f.id = e.fact_id
+      where e.user_id = $2
+        and f.model_dimension = $3',
     v_table_name
   );
 
@@ -477,16 +496,23 @@ begin
   -- Check if f.namespace matches ANY of the provided namespace arrays (supports variable-length arrays)
   if p_namespaces is not null and jsonb_array_length(p_namespaces) > 0 then
     v_query := v_query || '
-      and EXISTS (
-        SELECT 1 FROM jsonb_array_elements($6) AS ns
-        WHERE f.namespace = ARRAY(SELECT jsonb_array_elements_text(ns))::text[]
-      )';
+        and exists (
+          select 1
+          from jsonb_array_elements($6) as ns
+          where f.namespace @> (select array_agg(elem::text) from jsonb_array_elements_text(ns) as elem)
+        )';
   end if;
 
-  -- Add similarity filter and ordering
+  -- Add similarity filter and close the CTE, then select deduplicated results
   v_query := v_query || '
-    and (1 - (e.embedding <=> $1)) >= $4
-    order by e.embedding <=> $1
+        and (1 - (e.embedding <=> $1)) >= $4
+    )
+    select
+      id, content, namespace, language, intensity, confidence,
+      model_dimension, created_at, updated_at, similarity
+    from ranked_results
+    where rn = 1
+    order by similarity desc
     limit $5';
 
   -- Execute

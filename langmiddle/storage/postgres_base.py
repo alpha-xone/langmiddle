@@ -520,11 +520,20 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
         facts: Sequence[Dict[str, Any] | str],
         embeddings: Optional[List[List[float]]] = None,
         model_dimension: Optional[int] = None,
+        cue_embeddings: Optional[List[List[tuple[str, List[float]]]]] = None,
     ) -> Dict[str, Any]:
-        """Insert facts with optional embeddings into storage.
+        """Insert facts with optional embeddings and cue embeddings into storage.
 
         Facts can be passed as simple strings for convenience.
         They will be automatically converted to fact dictionaries.
+
+        Args:
+            credentials: Authentication credentials
+            user_id: User identifier
+            facts: List of facts (strings or dicts)
+            embeddings: Optional list of embedding vectors
+            model_dimension: Dimension of embeddings
+            cue_embeddings: Optional list of (cue_text, embedding) tuples per fact
         """
         raise NotImplementedError(
             "Facts management not implemented for this backend. "

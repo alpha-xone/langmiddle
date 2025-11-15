@@ -7,6 +7,7 @@ including Supabase, PostgreSQL, SQLite, and Firebase.
 
 from typing import Any, Dict, List, Optional, Sequence
 
+from dotenv import load_dotenv
 from langchain_core.messages import AnyMessage
 
 from ..utils.logging import get_graph_logger
@@ -17,6 +18,8 @@ from .sqlite_backend import SQLiteStorageBackend
 from .supabase_backend import SupabaseStorageBackend
 
 logger = get_graph_logger(__name__)
+
+load_dotenv()
 
 __all__ = ["ChatStorage"]
 

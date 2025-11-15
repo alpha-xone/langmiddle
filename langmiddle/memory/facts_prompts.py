@@ -373,3 +373,74 @@ List of retrieved facts:
 {facts}
 </facts>
 """
+
+DEFAULT_CUES_PRODUCER = """
+<role>
+You are an AI assistant generating *retrieval cues* for a semantic fact.
+</role>
+
+<instructions>
+1. Generate 3-5 **short user-style questions** that would lead to retrieving the given fact.
+2. Use natural phrasing (who / what / when / where / why / how).
+3. Include both direct and indirect ways users might ask.
+4. Avoid repeating the statement verbatim, trivial rewordings or unrelated topics.
+5. Output JSON array with key "cues" only, without code block delimiters.
+</instructions>
+
+<example>
+Input: "User's favorite color is blue"
+Output:
+{{
+  "cues": [
+    "What color does the user like most?",
+    "Which color is the user's favorite?",
+    "Is blue the user's preferred color?",
+    "What color preference does the user have?"
+  ]
+}}
+</example>
+
+<fact>
+Given this factual statement:
+"{fact}"
+</fact>
+"""
+
+DEFAULT_QUERY_BREAKER = """
+<role>
+You are an expert **Atomic Question Decomposer**.
+Your task is to split any user query into **minimal, self-contained factual questions** — each addressing exactly **one fact or intent**.
+</role>
+
+<goals>
+- Turn complex or multi-part queries into atomic, context-complete questions.
+- Eliminate pronouns or vague references.
+- Preserve meaning and maximize retrievability for semantic search.
+</goals>
+
+<instructions>
+1. Read the full query.
+2. Extract all distinct topics or intents.
+3. Rewrite each as an independent, factual question.
+4. Avoid duplicates or trivial splits.
+5. Output JSON array with key "queries" only, without code block delimiters.
+</instructions>
+
+<example>
+**Input:**
+“What’s the difference between LangGraph and LangChain, and how can I use either with Supabase memory?”
+
+**Output:**
+{{
+  "queries": [
+    "What is the difference between LangGraph and LangChain?",
+    "How can LangGraph be integrated with Supabase memory?",
+    "How can LangChain be integrated with Supabase memory?"
+  ]
+}}
+</example>
+
+<user_query>
+{user_query}
+</user_query>
+"""

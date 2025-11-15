@@ -31,6 +31,7 @@ from langchain_core.messages import (
     RemoveMessage,
 )
 from langchain_core.messages.utils import count_tokens_approximately
+from langchain_core.runnables import Runnable
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
 from langgraph.typing import ContextT
@@ -38,11 +39,13 @@ from langgraph.typing import ContextT
 from .memory.facts_manager import (
     ALWAYS_LOADED_NAMESPACES,
     apply_fact_actions,
+    break_query_into_atomic,
     extract_facts,
     formatted_facts,
     get_actions,
     query_existing_facts,
 )
+from .memory.facts_models import ExtractedFacts, FactsActions
 from .memory.facts_prompts import (
     DEFAULT_BASIC_INFO_INJECTOR,
     DEFAULT_FACTS_EXTRACTOR,
@@ -183,6 +186,18 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         if isinstance(model, BaseChatModel):
             self.model = model
 
+        # Cache structured output models for prompt caching optimization
+        # Reusing these models enables LLM provider caching (e.g., Anthropic prompt caching)
+        self.extraction_model: Runnable | None = None
+        self.actions_model: Runnable | None = None
+        if self.model is not None:
+            try:
+                self.extraction_model = self.model.with_structured_output(ExtractedFacts)
+                self.actions_model = self.model.with_structured_output(FactsActions)
+                logger.debug("Cached structured output models for extraction and actions")
+            except Exception as e:
+                logger.warning(f"Failed to create structured output models: {e}")
+
         # Initialize embedding model
         if isinstance(embedder, str):
             try:
@@ -262,10 +277,14 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             logger.error("Model not initialized for fact extraction.")
             return None
 
+        # Use cached extraction model if available for prompt caching optimization
+        model_to_use = self.extraction_model if self.extraction_model is not None else self.model
+
         extracted = extract_facts(
-            model=self.model,
+            model=model_to_use,
             extraction_prompt=self.extraction_prompt,
             messages=messages,
+            use_structured_model=self.extraction_model is not None,
         )
         if extracted is None:
             logger.error("Fact extraction failed.")
@@ -322,11 +341,15 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             return None
 
         try:
+            # Use cached actions model if available for prompt caching optimization
+            model_to_use = self.actions_model if self.actions_model is not None else self.model
+
             actions = get_actions(
-                model=self.model,
+                model=model_to_use,
                 update_prompt=self.update_prompt,
                 current_facts=existing_facts,
                 new_facts=new_facts,
+                use_structured_model=self.actions_model is not None,
             )
 
             if actions is None:
@@ -374,6 +397,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             user_id=user_id,
             actions=actions,
             embeddings_cache=self.embeddings_cache,
+            model=self.model,
         )
 
     def after_agent(
@@ -593,24 +617,44 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                     )
                 )
 
-            # Load context-specific memories
-            if self.embedder is not None:
-                queries: list[str] = []
+            # Load context-specific memories using atomic query breaking
+            if self.embedder is not None and self.model is not None:
+                # Extract user queries from last message
+                user_queries: list[str] = []
                 if isinstance(messages[-1].content, str):
-                    queries.append(messages[-1].content)
+                    user_queries.append(messages[-1].content)
                 if isinstance(messages[-1].content, list):
                     for block in messages[-1].content:
                         if isinstance(block, str):
-                            queries.append(block)
+                            user_queries.append(block)
 
-                for query in queries:
-                    self.current_facts.extend([
-                        fact for fact in self.storage.backend.query_facts(
+                # Break each query into atomic queries for better matching
+                all_atomic_queries: list[str] = []
+                for user_query in user_queries:
+                    atomic_queries = break_query_into_atomic(
+                        model=self.model,
+                        user_query=user_query,
+                    )
+                    all_atomic_queries.extend(atomic_queries)
+                    logger.debug(f"Query '{user_query[:50]}...' broke into {len(atomic_queries)} atomic queries")
+
+                # Query facts using atomic queries
+                for atomic_query in all_atomic_queries:
+                    try:
+                        query_embedding = self.embedder.embed_query(atomic_query)
+                        facts = self.storage.backend.query_facts(
                             credentials=credentials,
-                            query_embedding=self.embedder.embed_query(query),
+                            query_embedding=query_embedding,
                         )
-                        if fact.get("content") and fact.get("id") and fact["id"] not in curr_ids
-                    ])
+
+                        # Add facts that aren't already present
+                        for fact in facts:
+                            if fact.get("content") and fact.get("id") and fact["id"] not in curr_ids:
+                                self.current_facts.append(fact)
+                                curr_ids.append(fact["id"])
+                    except Exception as e:
+                        logger.error(f"Error querying facts for atomic query '{atomic_query[:50]}...': {e}")
+                        continue
 
                 if self.current_facts:
                     logger.debug(f"Applying {len(self.current_facts)} context-specific facts")

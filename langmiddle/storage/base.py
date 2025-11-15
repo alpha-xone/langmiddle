@@ -204,17 +204,22 @@ class ChatStorageBackend(ABC):
         facts: Sequence[Dict[str, Any] | str],
         embeddings: Optional[List[List[float]]] = None,
         model_dimension: Optional[int] = None,
+        cue_embeddings: Optional[List[List[tuple[str, List[float]]]]] = None,
     ) -> Dict[str, Any]:
         """
-        Insert facts with optional embeddings into storage.
+        Insert facts with optional embeddings and cue embeddings into storage.
 
         Args:
+            credentials: Authentication credentials
             user_id: User identifier
             facts: List of facts. Each fact can be either:
                 - A string (auto-converted to fact dictionary)
                 - A dictionary with keys: content, namespace, language, intensity, confidence
             embeddings: Optional list of embedding vectors (must match length of facts)
             model_dimension: Dimension of the embedding vectors (required if embeddings provided)
+            cue_embeddings: Optional list of (cue_text, embedding) tuples per fact.
+                           Structure: [[('cue1', emb1), ('cue2', emb2)], [('cue3', emb3)], ...]
+                           Length must match facts length if provided.
 
         Returns:
             Dict with 'inserted_count', 'fact_ids', and 'errors' keys

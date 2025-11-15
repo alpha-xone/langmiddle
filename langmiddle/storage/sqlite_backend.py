@@ -608,8 +608,9 @@ class SQLiteStorageBackend(ChatStorageBackend):
         facts: Sequence[Dict[str, Any] | str],
         embeddings: Optional[List[List[float]]] = None,
         model_dimension: Optional[int] = None,
+        cue_embeddings: Optional[List[List[tuple[str, List[float]]]]] = None,
     ) -> Dict[str, Any]:
-        """Insert facts with optional embeddings into storage."""
+        """Insert facts with optional embeddings and cue embeddings into storage."""
         raise NotImplementedError(
             "Facts management not supported in SQLite backend. "
             "Use SupabaseStorageBackend for vector similarity search and facts support."

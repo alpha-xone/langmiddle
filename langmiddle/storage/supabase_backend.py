@@ -393,7 +393,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
 
             if result.data:
                 message_ids = {
-                    msg["id"]
+                    str(msg["id"])
                     for msg in result.data
                     if isinstance(msg, dict) and "id" in msg
                 }
@@ -574,8 +574,9 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 .execute()
             )
 
-            msgs = messages.data if messages.data else []
-            return thread_to_dict(thread.data[0], msgs)
+            msgs: List[dict] = messages.data if messages.data else []  # type: ignore
+            thread_dict: dict = thread.data[0]  # type: ignore
+            return thread_to_dict(thread_dict, msgs)
         except Exception as e:
             logger.error(f"Error getting thread {thread_id}: {e}")
             return None
@@ -627,7 +628,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 return []
 
             # Fetch messages for all threads
-            thread_ids = [thread["id"] for thread in threads.data]
+            thread_list: List[dict] = threads.data  # type: ignore
+            thread_ids = [str(thread["id"]) for thread in thread_list]
             messages = (
                 self.client.table("chat_messages")
                 .select("*")
@@ -637,8 +639,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 .execute()
             )
 
-            msgs = messages.data if messages.data else []
-            return [thread_to_dict(thread, msgs) for thread in threads.data]
+            msgs: List[dict] = messages.data if messages.data else []  # type: ignore
+            return [thread_to_dict(thread, msgs) for thread in thread_list]
         except Exception as e:
             logger.error(f"Error searching threads: {e}")
             return []
@@ -680,8 +682,20 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         facts: Optional[Sequence[Dict[str, Any] | str]] = None,
         embeddings: Optional[List[List[float]]] = None,
         model_dimension: Optional[int] = None,
+        cue_embeddings: Optional[List[List[tuple[str, List[float]]]]] = None,
     ) -> Dict[str, Any]:
-        """Insert facts with optional embeddings."""
+        """Insert facts with optional embeddings and cue embeddings.
+
+        Args:
+            credentials: Authentication credentials
+            user_id: User identifier
+            facts: List of facts to insert
+            embeddings: List of embeddings for facts (one per fact)
+            model_dimension: Embedding dimension
+            cue_embeddings: Optional list of (cue_text, embedding) tuples per fact.
+                           Structure: [[('cue1', emb1), ('cue2', emb2)], [('cue3', emb3)], ...]
+                           Length must match facts length if provided.
+        """
         user_id = user_id or self.extract_user_id(credentials)
         if not user_id:
             return {"inserted_count": 0, "fact_ids": [], "errors": ["user_id required"]}
@@ -782,7 +796,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                     errors.append(f"Failed to insert fact at index {idx}")
                     continue
 
-                fact_id = result.data[0]["id"]
+                fact_record: dict = result.data[0]  # type: ignore
+                fact_id = str(fact_record["id"])
                 fact_ids.append(fact_id)
                 inserted_count += 1
 
@@ -804,13 +819,46 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
 
                     try:
                         table_name = f"fact_embeddings_{model_dimension}"
-                        embedding_data = {"fact_id": fact_id, "embedding": embedding}
+                        embedding_data = {
+                            "fact_id": fact_id,
+                            "user_id": user_id,
+                            "embedding": embedding,
+                            "fact_type": "fact",
+                            "cue_text": None,
+                        }
                         emb_result = self.client.table(table_name).insert(embedding_data).execute()
 
                         if not emb_result.data:
                             errors.append(f"Fact {fact_id}: Failed to insert embedding (no data returned)")
                         else:
                             logger.debug(f"Successfully inserted embedding for fact {fact_id}")
+
+                        # Insert cue embeddings if provided
+                        if cue_embeddings and idx < len(cue_embeddings) and cue_embeddings[idx]:
+                            for cue_text, cue_embedding in cue_embeddings[idx]:
+                                if not cue_embedding or len(cue_embedding) != model_dimension:
+                                    errors.append(
+                                        f"Fact {fact_id}: Invalid cue embedding for '{cue_text}', skipping"
+                                    )
+                                    continue
+
+                                try:
+                                    cue_data = {
+                                        "fact_id": fact_id,
+                                        "user_id": user_id,
+                                        "embedding": cue_embedding,
+                                        "fact_type": "cue",
+                                        "cue_text": cue_text,
+                                    }
+                                    cue_result = self.client.table(table_name).insert(cue_data).execute()
+
+                                    if not cue_result.data:
+                                        errors.append(f"Fact {fact_id}: Failed to insert cue '{cue_text}'")
+                                    else:
+                                        logger.debug(f"Successfully inserted cue '{cue_text}' for fact {fact_id}")
+                                except Exception as e:
+                                    errors.append(f"Fact {fact_id}: Failed to insert cue '{cue_text}' - {e}")
+
                     except Exception as e:
                         error_msg = str(e)
                         # Provide more helpful error messages
@@ -886,8 +934,9 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                         logger.debug(f"No facts found for user_id={user_id}")
                         return []
 
-                    logger.info(f"Listed {len(result.data)} facts from {user_id} with namespace filtering")
-                    return result.data
+                    facts_list: List[Dict[str, Any]] = result.data  # type: ignore
+                    logger.info(f"Listed {len(facts_list)} facts from {user_id} with namespace filtering")
+                    return facts_list
                 else:
                     # No namespace filter, just list all facts
                     query = (
@@ -902,8 +951,9 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                         logger.debug(f"No facts found for user_id={user_id}")
                         return []
 
-                    logger.info(f"Listed {len(result.data)} facts for user_id={user_id}")
-                    return result.data
+                    facts_list: List[Dict[str, Any]] = result.data  # type: ignore
+                    logger.info(f"Listed {len(facts_list)} facts for user_id={user_id}")
+                    return facts_list
 
             # Vector similarity search mode
             if not model_dimension:
@@ -925,8 +975,9 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 logger.debug("No facts found matching query")
                 return []
 
-            logger.info(f"Found {len(result.data)} facts matching query")
-            return result.data
+            facts_list: List[Dict[str, Any]] = result.data  # type: ignore
+            logger.info(f"Found {len(facts_list)} facts matching query")
+            return facts_list
         except Exception as e:
             logger.error(f"Error querying facts: {e}")
             return []
@@ -967,7 +1018,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             if not result.data:
                 return None
 
-            return result.data[0]
+            fact_record: Dict[str, Any] = result.data[0]  # type: ignore
+            return fact_record
         except Exception as e:
             logger.error(f"Error getting fact {fact_id}: {e}")
             return None
@@ -1218,7 +1270,11 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 .execute()
             )
 
-            processed_ids = [row["message_id"] for row in result.data] if result.data else []
+            if result.data:
+                rows: List[dict] = result.data  # type: ignore
+                processed_ids = [str(row["message_id"]) for row in rows]
+            else:
+                processed_ids = []
             logger.debug(f"Found {len(processed_ids)} processed messages out of {len(message_ids)}")
             return processed_ids
         except Exception as e:
@@ -1309,8 +1365,9 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             if not result.data:
                 return []
 
-            logger.info(f"Found {len(result.data)} history records for fact {fact_id}")
-            return result.data
+            history_list: List[Dict[str, Any]] = result.data  # type: ignore
+            logger.info(f"Found {len(history_list)} history records for fact {fact_id}")
+            return history_list
         except Exception as e:
             logger.error(f"Error getting fact history for {fact_id}: {e}")
             return []
@@ -1350,8 +1407,9 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             if not result.data:
                 return []
 
-            logger.info(f"Found {len(result.data)} recent fact changes")
-            return result.data
+            changes_list: List[Dict[str, Any]] = result.data  # type: ignore
+            logger.info(f"Found {len(changes_list)} recent fact changes")
+            return changes_list
         except Exception as e:
             logger.error(f"Error getting recent fact changes: {e}")
             return []
@@ -1387,7 +1445,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             if not result.data:
                 return None
 
-            return result.data[0]
+            stats: Dict[str, Any] = result.data[0]  # type: ignore
+            return stats
         except Exception as e:
             logger.error(f"Error getting fact change stats: {e}")
             return None
