@@ -1,7 +1,6 @@
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
-from langchain.chat_models import BaseChatModel
 from langchain.embeddings import Embeddings
 from langchain_core.messages import AnyMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -9,7 +8,13 @@ from langchain_core.runnables import Runnable
 
 from ..utils.logging import get_graph_logger
 from ..utils.messages import filter_tool_messages
-from .facts_models import AtomicQueries, CuesResponse, CurrentFacts, ExtractedFacts, FactsActions
+from .facts_models import (
+    AtomicQueries,
+    CuesResponse,
+    CurrentFacts,
+    ExtractedFacts,
+    FactsActions,
+)
 from .facts_prompts import (
     DEFAULT_CUES_PRODUCER,
     DEFAULT_FACTS_EXTRACTOR,
@@ -21,6 +26,8 @@ if TYPE_CHECKING:
     from ..storage.base import ChatStorageBackend
 
 logger = get_graph_logger(__name__)
+
+T = TypeVar('T')
 
 ALWAYS_LOADED_NAMESPACES = [
     ["user", "personal_info"],
@@ -42,6 +49,51 @@ __all__ = [
 ]
 
 
+def _invoke_structured_model(
+    model: Runnable,
+    prompt_template: str,
+    input_vars: dict[str, Any],
+    expected_type: type[T],
+    function_name: str,
+    fallback_value: T | None = None,
+) -> T | None:
+    """Common wrapper for invoking structured LLM models with validation and logging.
+
+    Args:
+        model: Runnable model with structured output already configured
+        prompt_template: Prompt template string
+        input_vars: Dictionary of variables to pass to the prompt
+        expected_type: Expected type of the structured output
+        function_name: Name of the calling function (for logging)
+        fallback_value: Optional fallback value to return on error
+
+    Returns:
+        Structured output of expected_type, or fallback_value on error
+    """
+    if not isinstance(model, Runnable):
+        logger.error(f"[{function_name}] Model is not a Runnable: {type(model)}")
+        return fallback_value
+
+    try:
+        result: Any = (
+            ChatPromptTemplate.from_template(prompt_template)
+            | model
+        ).invoke(input_vars)
+
+        if not isinstance(result, expected_type):
+            logger.warning(
+                f"[{function_name}] Unexpected result type: {type(result)}, expected {expected_type.__name__}"
+            )
+            return fallback_value
+
+        logger.debug(f"[{function_name}] Successfully invoked model")
+        return result
+
+    except Exception as e:
+        logger.error(f"[{function_name}] Error invoking model: {e}")
+        return fallback_value
+
+
 def formatted_facts(facts: list[dict]) -> str:
     """Format a list of fact dictionaries into a readable string."""
     return "\n".join(
@@ -53,7 +105,7 @@ def formatted_facts(facts: list[dict]) -> str:
 
 
 def break_query_into_atomic(
-    model: BaseChatModel | Any,
+    model: Runnable,
     user_query: str,
     *,
     query_breaker_prompt: str = DEFAULT_QUERY_BREAKER,
@@ -61,158 +113,106 @@ def break_query_into_atomic(
     """Break a complex user query into atomic queries for better fact retrieval.
 
     Args:
-        model: Base chat model for query decomposition
+        model: Runnable with structured output configured for AtomicQueries
         user_query: The user's query to break down
         query_breaker_prompt: Prompt template for query breaking
 
     Returns:
         List of atomic query strings (or original query if breaking fails)
     """
-    if not isinstance(model, BaseChatModel):
-        logger.error(f"Model is not a BaseChatModel: {model}")
-        return [user_query]  # Fallback to original query
-
     if not user_query or not user_query.strip():
-        logger.warning("Empty query provided for atomic breaking")
+        logger.warning("[break_query_into_atomic] Empty query provided")
         return []
 
-    try:
-        # Break query using the prompt
-        result = (
-            ChatPromptTemplate.from_template(query_breaker_prompt)
-            | model.with_structured_output(AtomicQueries)
-        ).invoke({"user_query": user_query})
+    result = _invoke_structured_model(
+        model=model,
+        prompt_template=query_breaker_prompt,
+        input_vars={"user_query": user_query},
+        expected_type=AtomicQueries,
+        function_name="break_query_into_atomic",
+        fallback_value=None,
+    )
 
-        if not isinstance(result, AtomicQueries):
-            logger.warning(f"Unexpected result type: {type(result)}, expected AtomicQueries")
-            return [user_query]  # Fallback to original query
+    if result is None:
+        logger.debug("[break_query_into_atomic] Falling back to original query")
+        return [user_query]
 
-        if not result.queries:
-            logger.debug("No atomic queries generated, using original query")
-            return [user_query]
+    if not result.queries:
+        logger.debug("[break_query_into_atomic] No atomic queries generated, using original query")
+        return [user_query]
 
-        logger.debug(f"Broke query into {len(result.queries)} atomic queries")
-        return result.queries
-
-    except Exception as e:
-        logger.error(f"Error breaking query into atomic queries: {e}")
-        return [user_query]  # Fallback to original query
+    logger.debug(f"[break_query_into_atomic] Broke query into {len(result.queries)} atomic queries")
+    return result.queries
 
 
 def generate_fact_cues(
-    model: BaseChatModel | Any,
+    model: Runnable,
     fact_content: str,
     *,
     cues_prompt: str = DEFAULT_CUES_PRODUCER,
-    use_structured_model: bool = False,
 ) -> list[str]:
     """Generate retrieval cues for a fact using LLM.
 
     Args:
-        model: Either a base chat model or a cached model with structured output
+        model: Runnable with structured output configured for CuesResponse
         fact_content: The fact content to generate cues for
         cues_prompt: Prompt template for cue generation
-        use_structured_model: If True, model is already structured
 
     Returns:
         List of generated cue strings (questions that would retrieve this fact)
     """
-    if not isinstance(model, (BaseChatModel, Runnable)):
-        logger.error(f"Model is not a BaseChatModel or Runnable: {model}")
-        return []
-
     if not fact_content or not fact_content.strip():
-        logger.warning("Empty fact content provided for cue generation")
+        logger.warning("[generate_fact_cues] Empty fact content provided")
         return []
 
-    try:
-        # Generate cues using the prompt
-        if use_structured_model:
-            # Model already has structured output - need to recreate with CuesResponse
-            # For now, fall back to non-structured approach
-            logger.debug("Structured model provided but cues need different schema, using base model")
-            if not isinstance(model, BaseChatModel):
-                logger.error("Cannot generate cues: structured model incompatible")
-                return []
-            result = (
-                ChatPromptTemplate.from_template(cues_prompt)
-                | model.with_structured_output(CuesResponse)
-            ).invoke({"fact": fact_content})
-        else:
-            if not isinstance(model, BaseChatModel):
-                logger.error("Model must be BaseChatModel when use_structured_model=False")
-                return []
-            result = (
-                ChatPromptTemplate.from_template(cues_prompt)
-                | model.with_structured_output(CuesResponse)
-            ).invoke({"fact": fact_content})
+    result = _invoke_structured_model(
+        model=model,
+        prompt_template=cues_prompt,
+        input_vars={"fact": fact_content},
+        expected_type=CuesResponse,
+        function_name="generate_fact_cues",
+        fallback_value=None,
+    )
 
-        if not isinstance(result, CuesResponse):
-            logger.warning(f"Unexpected result type: {type(result)}, expected CuesResponse")
-            return []
-
-        logger.debug(f"Generated {len(result.cues)} cues for fact")
-        return result.cues
-
-    except Exception as e:
-        logger.error(f"Error generating cues for fact: {e}")
+    if result is None:
         return []
+
+    logger.debug(f"[generate_fact_cues] Generated {len(result.cues)} cues for fact")
+    return result.cues
 
 
 def extract_facts(
-    model: BaseChatModel | Any,
+    model: Runnable,
     *,
     extraction_prompt: str = DEFAULT_FACTS_EXTRACTOR,
     messages: Sequence[AnyMessage | dict],
-    use_structured_model: bool = False,
 ) -> ExtractedFacts | None:
     """
     Extract facts from a list of messages.
 
     Args:
-        model: Either a base chat model or a cached model with structured output
+        model: Runnable with structured output configured for ExtractedFacts
         extraction_prompt: Prompt template for extraction
         messages: Messages to extract facts from
-        use_structured_model: If True, model is already structured and won't call with_structured_output
     """
-    # Validate and set defaults
-    # Accept both BaseChatModel and Runnable (for cached structured models)
-    if not isinstance(model, (BaseChatModel, Runnable)):
-        logger.error(f"Model is not a BaseChatModel or Runnable: {model}")
-        return None
-
     filtered_messages = filter_tool_messages(messages)
     if not filtered_messages:
-        logger.debug("No messages to process after filtering tool messages")
+        logger.debug("[extract_facts] No messages to process after filtering tool messages")
         return None
 
-    try:
-        # If model is already structured, use it directly; otherwise add structured output
-        if use_structured_model:
-            facts: Any = (
-                ChatPromptTemplate.from_template(extraction_prompt)
-                | model  # Model already has structured output
-            ).invoke({'messages': filtered_messages})
-        else:
-            # Only BaseChatModel has with_structured_output method
-            if not isinstance(model, BaseChatModel):
-                logger.error("Model must be BaseChatModel when use_structured_model=False")
-                return None
-            facts: Any = (
-                ChatPromptTemplate.from_template(extraction_prompt)
-                | model.with_structured_output(ExtractedFacts)
-            ).invoke({'messages': filtered_messages})
-    except Exception as e:
-        logger.error(f"Error invoking model for fact extraction: {e}")
-        return None
+    result = _invoke_structured_model(
+        model=model,
+        prompt_template=extraction_prompt,
+        input_vars={'messages': filtered_messages},
+        expected_type=ExtractedFacts,
+        function_name="extract_facts",
+        fallback_value=None,
+    )
 
-    # Type guard: ensure result is `ExtractedFacts`
-    if not isinstance(facts, ExtractedFacts):
-        logger.warning(f"Unexpected result type: {type(facts)}, expected {ExtractedFacts}")
-        return None
+    if result is not None:
+        logger.info(f"[extract_facts] Extracted {len(result.facts)} facts from messages")
 
-    logger.info(f"Extracted {len(facts.facts)} facts from messages")
-    return facts
+    return result
 
 
 def query_existing_facts(
@@ -373,12 +373,11 @@ def query_existing_facts(
 
 
 def get_actions(
-    model: BaseChatModel | Any,
+    model: Runnable,
     *,
     update_prompt: str = DEFAULT_FACTS_UPDATER,
     current_facts: list[dict] | CurrentFacts,
     new_facts: list[dict] | ExtractedFacts,
-    use_structured_model: bool = False,
 ) -> FactsActions | None:
     """
     Update facts with new information from a list of messages.
@@ -388,18 +387,11 @@ def get_actions(
     original IDs in the returned actions.
 
     Args:
-        model: Either a base chat model or a cached model with structured output
+        model: Runnable with structured output configured for FactsActions
         update_prompt: Prompt template for determining actions
         current_facts: Existing facts from storage
         new_facts: Newly extracted facts
-        use_structured_model: If True, model is already structured and won't call with_structured_output
     """
-    # Validate and set defaults
-    # Accept both BaseChatModel and Runnable (for cached structured models)
-    if not isinstance(model, (BaseChatModel, Runnable)):
-        logger.error(f"Model is not a BaseChatModel or Runnable: {model}")
-        return None
-
     # Create ID mapping: original_id -> simple_id ("1", "2", "3", ...)
     id_mapping = {}
     reverse_mapping = {}
@@ -429,43 +421,30 @@ def get_actions(
 
         mapped_facts.append(mapped_fact)
 
-    logger.debug(f"Mapped {len(id_mapping)} fact IDs to simple numeric strings")
+    logger.debug(f"[get_actions] Mapped {len(id_mapping)} fact IDs to simple numeric strings")
 
-    try:
-        # If model is already structured, use it directly; otherwise add structured output
-        if use_structured_model:
-            updates: Any = (
-                ChatPromptTemplate.from_template(update_prompt)
-                | model  # Model already has structured output
-            ).invoke({"current_facts": mapped_facts, "new_facts": new_facts})
-        else:
-            # Only BaseChatModel has with_structured_output method
-            if not isinstance(model, BaseChatModel):
-                logger.error("Model must be BaseChatModel when use_structured_model=False")
-                return None
-            updates: Any = (
-                ChatPromptTemplate.from_template(update_prompt)
-                | model.with_structured_output(FactsActions)
-            ).invoke({"current_facts": mapped_facts, "new_facts": new_facts})
-    except Exception as e:
-        logger.error(f"Error invoking model for fact update: {e}")
-        return None
+    result = _invoke_structured_model(
+        model=model,
+        prompt_template=update_prompt,
+        input_vars={"current_facts": mapped_facts, "new_facts": new_facts},
+        expected_type=FactsActions,
+        function_name="get_actions",
+        fallback_value=None,
+    )
 
-    # Type guard: ensure result is `FactsActions`
-    if not isinstance(updates, FactsActions):
-        logger.warning(f"Unexpected result type: {type(updates)}, expected {FactsActions}")
+    if result is None:
         return None
 
     # Map simple IDs back to original IDs in the actions
-    for action in updates.actions:
+    for action in result.actions:
         simple_id = action.id
         if simple_id in reverse_mapping:
             action.id = reverse_mapping[simple_id]
-            logger.debug(f"Mapped ID {simple_id} back to {action.id}")
+            logger.debug(f"[get_actions] Mapped ID {simple_id} back to {action.id}")
         else:
-            logger.warning(f"Simple ID {simple_id} not found in reverse mapping")
+            logger.warning(f"[get_actions] Simple ID {simple_id} not found in reverse mapping")
 
-    return updates
+    return result
 
 
 def apply_fact_actions(
@@ -475,7 +454,7 @@ def apply_fact_actions(
     user_id: str,
     actions: list[dict],
     embeddings_cache: dict[str, list[float]] | None = None,
-    model: BaseChatModel | Any = None,
+    model: Runnable | None = None,
 ) -> dict[str, Any]:
     """Apply the determined actions to the storage backend.
 
@@ -487,7 +466,7 @@ def apply_fact_actions(
         actions: List of action dictionaries with 'action' field (ADD, UPDATE, DELETE, NONE)
         embeddings_cache: Optional dict mapping content strings to pre-computed embedding vectors.
                          Only missing embeddings will be generated.
-        model: Optional LLM model for generating retrieval cues for facts
+        model: Optional Runnable with structured output for generating retrieval cues for facts
 
     Returns:
         Dict with statistics: {'added': int, 'updated': int, 'deleted': int, 'errors': list}
