@@ -81,7 +81,7 @@ def fact_extractor_example():
     if not extracted_facts:
         print("  No facts extracted.")
     else:
-        for i, fact in enumerate(extracted_facts, 1):
+        for i, fact in enumerate(extracted_facts.facts, 1):
             print(f"  {i}. {fact}")
 
     print("-" * 80)
