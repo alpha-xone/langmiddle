@@ -1,0 +1,902 @@
+[
+    {
+        "id": "en_01",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "I'm Alex, a 34-year-old paramedic in Denver training for a spring triathlon."
+            },
+            {
+                "role": "assistant",
+                "content": "Noted."
+            },
+            {
+                "role": "user",
+                "content": "My wife Priya just opened a vegan bakery on Colfax Avenue, and I help with marketing."
+            },
+            {
+                "role": "assistant",
+                "content": "Okay."
+            },
+            {
+                "role": "user",
+                "content": "I carpool to night shifts with my neighbor Mateo because we both start at 8 p.m."
+            },
+            {
+                "role": "assistant",
+                "content": "Understood."
+            }
+        ]
+    },
+    {
+        "id": "en_02",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "This is Morgan, a 28-year-old choir teacher from Savannah who collects vintage sheet music."
+            },
+            {
+                "role": "assistant",
+                "content": "Sure."
+            },
+            {
+                "role": "user",
+                "content": "I rehearse every Tuesday with my community jazz trio at the old armory."
+            },
+            {
+                "role": "assistant",
+                "content": "Got it."
+            },
+            {
+                "role": "user",
+                "content": "My twin brother Dylan ships me rare scores from his bookstore in Portland."
+            },
+            {
+                "role": "assistant",
+                "content": "Copy."
+            }
+        ]
+    },
+    {
+        "id": "en_03",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "Hey, I'm Janelle, a freelance UX designer living in Austin with my rescue husky Nova."
+            },
+            {
+                "role": "assistant",
+                "content": "Hi."
+            },
+            {
+                "role": "user",
+                "content": "I work from a coworking loft on South Congress three days a week."
+            },
+            {
+                "role": "assistant",
+                "content": "Noted."
+            },
+            {
+                "role": "user",
+                "content": "I mentor coding bootcamp students on Friday evenings for extra income."
+            },
+            {
+                "role": "assistant",
+                "content": "Cool."
+            }
+        ]
+    },
+    {
+        "id": "en_04",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "I'm Thomas, a 41-year-old civil engineer overseeing bridge maintenance in Pittsburgh."
+            },
+            {
+                "role": "assistant",
+                "content": "Understood."
+            },
+            {
+                "role": "user",
+                "content": "Every Wednesday I volunteer at the robotics club where my daughter Elise competes."
+            },
+            {
+                "role": "assistant",
+                "content": "Nice."
+            },
+            {
+                "role": "user",
+                "content": "My favorite stress relief is restoring antique bicycles in my basement workshop."
+            },
+            {
+                "role": "assistant",
+                "content": "Noted."
+            }
+        ]
+    },
+    {
+        "id": "en_05",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "Call me Nina; I'm a 25-year-old biomedical student from Toronto working nights at a smoothie bar."
+            },
+            {
+                "role": "assistant",
+                "content": "Okay."
+            },
+            {
+                "role": "user",
+                "content": "My capstone focuses on wearable glucose monitors for teenagers."
+            },
+            {
+                "role": "assistant",
+                "content": "Thanks."
+            },
+            {
+                "role": "user",
+                "content": "I share an apartment with my cousin Leila who is allergic to peanuts."
+            },
+            {
+                "role": "assistant",
+                "content": "Gotcha."
+            }
+        ]
+    },
+    {
+        "id": "en_06",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "I'm Roberto, a 52-year-old art curator in Miami who specializes in Caribbean sculpture."
+            },
+            {
+                "role": "assistant",
+                "content": "Noted."
+            },
+            {
+                "role": "user",
+                "content": "I host monthly salons at my Coconut Grove townhouse for local artists."
+            },
+            {
+                "role": "assistant",
+                "content": "Sure."
+            },
+            {
+                "role": "user",
+                "content": "My son Leo just started at Pratt Institute studying industrial design."
+            },
+            {
+                "role": "assistant",
+                "content": "Great."
+            }
+        ]
+    },
+    {
+        "id": "en_07",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "It's Priyanka here, a 31-year-old pediatrician from Seattle raising twins named Mira and Arjun."
+            },
+            {
+                "role": "assistant",
+                "content": "Hi."
+            },
+            {
+                "role": "user",
+                "content": "I coordinate the hospital's flu clinic schedule every October."
+            },
+            {
+                "role": "assistant",
+                "content": "Okay."
+            },
+            {
+                "role": "user",
+                "content": "My spouse Jordan manages a climbing gym in Ballard."
+            },
+            {
+                "role": "assistant",
+                "content": "Understood."
+            }
+        ]
+    },
+    {
+        "id": "en_08",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "I'm DeShawn, a 38-year-old high school basketball coach from Detroit who studied sports psychology."
+            },
+            {
+                "role": "assistant",
+                "content": "Cool."
+            },
+            {
+                "role": "user",
+                "content": "My team practices at the rec center on Jefferson Avenue every dawn."
+            },
+            {
+                "role": "assistant",
+                "content": "Okay."
+            },
+            {
+                "role": "user",
+                "content": "I run a mentorship program pairing seniors with sixth graders from my church."
+            },
+            {
+                "role": "assistant",
+                "content": "Great."
+            }
+        ]
+    },
+    {
+        "id": "en_09",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "Hello, I'm Evelyn, a 47-year-old climate journalist based in Boston who bikes everywhere."
+            },
+            {
+                "role": "assistant",
+                "content": "Hi."
+            },
+            {
+                "role": "user",
+                "content": "My newsletter Carbon Lens goes out every Thursday morning."
+            },
+            {
+                "role": "assistant",
+                "content": "Nice."
+            },
+            {
+                "role": "user",
+                "content": "I share an office with my husband Sam who runs an urban farming nonprofit."
+            },
+            {
+                "role": "assistant",
+                "content": "Noted."
+            }
+        ]
+    },
+    {
+        "id": "en_10",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "I'm Victor, a 29-year-old indie game developer in Minneapolis who graduated from UMN."
+            },
+            {
+                "role": "assistant",
+                "content": "Sure."
+            },
+            {
+                "role": "user",
+                "content": "My studio is just me and my roommate Hannah working out of our attic."
+            },
+            {
+                "role": "assistant",
+                "content": "Okay."
+            },
+            {
+                "role": "user",
+                "content": "We release monthly devlogs to Patreon supporters on the first Sunday."
+            },
+            {
+                "role": "assistant",
+                "content": "Copy."
+            }
+        ]
+    },
+    {
+        "id": "en_11",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "Name's Fatima, a 36-year-old supply chain analyst from Dallas raising a beagle named Cinnamon."
+            },
+            {
+                "role": "assistant",
+                "content": "Hi."
+            },
+            {
+                "role": "user",
+                "content": "I just switched to a four-day workweek at the logistics startup I joined."
+            },
+            {
+                "role": "assistant",
+                "content": "Alright."
+            },
+            {
+                "role": "user",
+                "content": "My brother Kareem and I run a weekend salsa class for fun."
+            },
+            {
+                "role": "assistant",
+                "content": "Nice."
+            }
+        ]
+    },
+    {
+        "id": "en_12",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "I'm George, a 55-year-old librarian from Boise who runs the local history podcast Sagebrush Stories."
+            },
+            {
+                "role": "assistant",
+                "content": "Nice."
+            },
+            {
+                "role": "user",
+                "content": "I catalog Civilian Conservation Corps artifacts every Thursday night."
+            },
+            {
+                "role": "assistant",
+                "content": "Okay."
+            },
+            {
+                "role": "user",
+                "content": "My partner Luis manages the farmers market where I volunteer weekends."
+            },
+            {
+                "role": "assistant",
+                "content": "Understood."
+            }
+        ]
+    },
+    {
+        "id": "en_13",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "This is Kayla, a 22-year-old marine biology major interning at the Monterey Bay Aquarium."
+            },
+            {
+                "role": "assistant",
+                "content": "Hi."
+            },
+            {
+                "role": "user",
+                "content": "I tag sea otters for a population study every dawn."
+            },
+            {
+                "role": "assistant",
+                "content": "Okay."
+            },
+            {
+                "role": "user",
+                "content": "My roommate Aisha and I keep a spreadsheet of plastic-free product swaps."
+            },
+            {
+                "role": "assistant",
+                "content": "Cool."
+            }
+        ]
+    },
+    {
+        "id": "en_14",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "I'm Liam, a 33-year-old carpenter from Cork now working on film sets in Vancouver."
+            },
+            {
+                "role": "assistant",
+                "content": "Got it."
+            },
+            {
+                "role": "user",
+                "content": "My sister Saoirse lets me crash in her laneway house while I'm on contract."
+            },
+            {
+                "role": "assistant",
+                "content": "Okay."
+            },
+            {
+                "role": "user",
+                "content": "I send weekly voice notes to my parents back in Ireland every Sunday morning."
+            },
+            {
+                "role": "assistant",
+                "content": "Noted."
+            }
+        ]
+    },
+    {
+        "id": "en_15",
+        "language": "english",
+        "turns": [
+            {
+                "role": "user",
+                "content": "Hey, I'm Riley, a 30-year-old data analyst in Chicago who competes in weekend improv shows."
+            },
+            {
+                "role": "assistant",
+                "content": "Hi."
+            },
+            {
+                "role": "user",
+                "content": "My employer lets me work remotely every Friday so I can visit my grandma in Evanston."
+            },
+            {
+                "role": "assistant",
+                "content": "Sure."
+            },
+            {
+                "role": "user",
+                "content": "I track my marathon training with my best friend Devon using a shared spreadsheet."
+            },
+            {
+                "role": "assistant",
+                "content": "Great."
+            }
+        ]
+    },
+    {
+        "id": "zh_01",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u662f\u9648\u4f1f\uff0c35\u5c81\u7684\u4e0a\u6d77\u4e2d\u5b66\u5386\u53f2\u8001\u5e08\uff0c\u5bb6\u91cc\u517b\u7740\u4e00\u53ea\u53eb\u8c46\u8c46\u7684\u6a58\u732b\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u597d\u7684\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u6bcf\u5929\u65e9\u4e0a\u4e03\u70b9\u7ed9\u9ad8\u4e09\u5b66\u751f\u505a\u8003\u7814\u8f85\u5bfc\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u660e\u767d\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u5468\u672b\u6211\u4f1a\u5e26\u7236\u6bcd\u53bb\u5f90\u5bb6\u6c47\u6559\u5802\u542c\u5408\u5531\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u6536\u5230\u3002"
+            }
+        ]
+    },
+    {
+        "id": "zh_02",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u662f\u674e\u5a1c\uff0c29\u5c81\uff0c\u5728\u5e7f\u5dde\u505aUI\u8bbe\u8ba1\u5e08\uff0c\u8fd8\u517c\u804c\u6559\u63d2\u753b\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u4e86\u89e3\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u8ddf\u59d0\u59d0\u4f4f\u5728\u73e0\u6c5f\u65b0\u57ce\u7684\u5408\u79df\u516c\u5bd3\u91cc\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u597d\u7684\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6bcf\u5468\u56db\u6211\u4f1a\u7ed9\u4e00\u5bb6\u516c\u76ca\u673a\u6784\u8bbe\u8ba1\u513f\u7ae5\u8bfb\u7269\u5c01\u9762\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u8bb0\u4e0b\u3002"
+            }
+        ]
+    },
+    {
+        "id": "zh_03",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u53eb\u5468\u542f\u660e\uff0c\u662f\u5317\u4eac\u768435\u5c81\u98ce\u6295\u7ecf\u7406\uff0c\u559c\u6b22\u6536\u85cf\u8001\u5531\u7247\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u77e5\u9053\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u592a\u592a\u738b\u73ca\u662f\u4e00\u540d\u513f\u79d1\u533b\u751f\uff0c\u6211\u4eec\u5468\u4e8c\u4e00\u8d77\u53bb\u5065\u8eab\u623f\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u660e\u767d\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u5f1f\u5f1f\u5728\u6210\u90fd\u8fd0\u8425\u4e00\u5bb6\u5496\u5561\u54c1\u724c\uff0c\u7ecf\u5e38\u5bc4\u8c46\u5b50\u7ed9\u6211\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u597d\u7684\u3002"
+            }
+        ]
+    },
+    {
+        "id": "zh_04",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u662f\u6b66\u6c49\u7684\u9ad8\u4e2d\u7269\u7406\u8001\u5e08\u82cf\u5a77\uff0c\u4eca\u5e7431\u5c81\uff0c\u5bb6\u91cc\u6709\u4e00\u6761\u8fb9\u7267\u53eb\u7535\u7535\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u597d\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u6bcf\u5929\u4e58\u5730\u94c1\u516d\u53f7\u7ebf\u53bb\u5b66\u6821\u4e0a\u73ed\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u61c2\u4e86\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u5988\u5988\u7ecf\u8425\u4e00\u5bb6\u8336\u9986\uff0c\u6211\u5e38\u5468\u672b\u5e2e\u5fd9\u51b2\u6ce1\u5ca9\u8336\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u8bb0\u4f4f\u3002"
+            }
+        ]
+    },
+    {
+        "id": "zh_05",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u53eb\u90ed\u4eae\uff0c44\u5c81\uff0c\u5728\u6210\u90fd\u7ecf\u8425\u4e00\u5bb6\u4e32\u4e32\u9999\u9910\u9986\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u597d\u7684\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u8001\u5a46\u9648\u654f\u8d1f\u8d23\u91c7\u8d2d\uff0c\u6211\u6bcf\u5929\u8d1f\u8d23\u8c03\u5236\u5e95\u6599\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u77e5\u9053\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u513f\u5b50\u4eca\u5e74\u521a\u8003\u4e0a\u5ddd\u5927\u65b0\u95fb\u5b66\u9662\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u660e\u767d\u3002"
+            }
+        ]
+    },
+    {
+        "id": "zh_06",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u662f\u6df1\u5733\u7684\u4ea7\u54c1\u7ecf\u7406\u6797\u96ea\uff0c33\u5c81\uff0c\u5e38\u5e74\u505a\u8de8\u5883\u7535\u5546\u9879\u76ee\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u4e86\u89e3\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u6bcf\u5929\u6e05\u6668\u4f1a\u5728\u5927\u6885\u6c99\u8dd1\u4e94\u516c\u91cc\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u8bb0\u4e0b\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u4e08\u592b\u5728\u9999\u6e2f\u505a\u5efa\u7b51\u8bbe\u8ba1\uff0c\u6211\u4eec\u5468\u672b\u8f6e\u6d41\u8fc7\u5173\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u77e5\u9053\u3002"
+            }
+        ]
+    },
+    {
+        "id": "zh_07",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u53eb\u5510\u60a6\uff0c27\u5c81\uff0c\u662f\u91cd\u5e86\u7684\u8857\u821e\u6559\u7ec3\uff0c\u540c\u65f6\u8fd0\u8425\u4e00\u4e2a\u6296\u97f3\u8d26\u53f7\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u597d\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u6bcf\u5929\u665a\u4e0a\u5728\u89c2\u97f3\u6865\u5e7f\u573a\u5e26\u516c\u5f00\u8bfe\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u660e\u767d\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u7238\u7238\u7ecf\u8425\u4e94\u91d1\u5e97\uff0c\u5e38\u8d5e\u52a9\u6211\u6bd4\u8d5b\u65c5\u8d39\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u8bb0\u4f4f\u3002"
+            }
+        ]
+    },
+    {
+        "id": "zh_08",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u662f\u53f0\u5317\u7684\u65c5\u6e38\u6444\u5f71\u5e08\u53f6\u8679\uff0c32\u5c81\uff0c\u4e3b\u8981\u62cd\u5c71\u5cb3\u98ce\u666f\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u4e86\u89e3\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u6bcf\u4e2a\u6708\u90fd\u4f1a\u5e26\u5988\u5988\u4e00\u8d77\u722c\u8c61\u5c71\u8bad\u7ec3\u4f53\u529b\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u597d\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u59b9\u59b9\u5728\u9ad8\u96c4\u5f00\u80cc\u5305\u5ba2\u6808\uff0c\u5e38\u9080\u6211\u505a\u6444\u5f71\u8bb2\u5ea7\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u6536\u5230\u3002"
+            }
+        ]
+    },
+    {
+        "id": "zh_09",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u53eb\u97e9\u51b0\uff0c\u662f\u54c8\u5c14\u6ee8\u768437\u5c81\u6ed1\u96ea\u6559\u7ec3\uff0c\u559c\u6b22\u81ea\u5df1\u6253\u8721\u96ea\u677f\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u77e5\u9053\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u6bcf\u5929\u5728\u4e9a\u5e03\u529b\u5ea6\u5047\u533a\u5e26\u65e9\u73ed\u8bfe\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u660e\u767d\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u5973\u513f\u5728\u5357\u4eac\u8bfb\u822a\u7a7a\u822a\u5929\uff0c\u5979\u5bd2\u5047\u4e5f\u4f1a\u5e2e\u6211\u5e26\u8bfe\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u597d\u7684\u3002"
+            }
+        ]
+    },
+    {
+        "id": "zh_10",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u662f\u6765\u81ea\u897f\u5b89\u7684\u8003\u53e4\u535a\u58eb\u540e\u738b\u5b87\uff0c\u5e38\u9a7b\u79e6\u9675\u535a\u7269\u9662\u505a\u7814\u7a76\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u660e\u767d\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u6bcf\u665a\u4f1a\u7ed9\u5728\u6210\u90fd\u8bfb\u521d\u4e2d\u7684\u513f\u5b50\u8fdc\u7a0b\u8f85\u5bfc\u4f5c\u4e1a\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u597d\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u59bb\u5b50\u662f\u6587\u7269\u4fee\u590d\u5e08\uff0c\u76ee\u524d\u5728\u6566\u714c\u9a7b\u573a\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u6536\u5230\u3002"
+            }
+        ]
+    },
+    {
+        "id": "zh_11",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u662f\u9999\u6e2f\u7684\u4f01\u4e1a\u6cd5\u52a1\u6881\u6dd1\u4eea\uff0c40\u5c81\uff0c\u5e38\u5904\u7406\u8de8\u5883\u5e76\u8d2d\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u4e86\u89e3\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u8ddf\u4e08\u592b\u4f4f\u5728\u5c06\u519b\u6fb3\uff0c\u6bcf\u65e9\u642d\u6e2f\u94c1\u4e0a\u73ed\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u8bb0\u4e0b\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u5973\u513f\u5728\u62d4\u8403\u5973\u4e66\u9662\u8bfb\u521d\u4e00\uff0c\u559c\u6b22\u6253\u51fb\u4e50\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u77e5\u9053\u3002"
+            }
+        ]
+    },
+    {
+        "id": "zh_12",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u662f\u6606\u660e\u7684\u82b1\u827a\u5e08\u8d75\u8559\uff0c30\u5c81\uff0c\u4e13\u505a\u5a5a\u793c\u5e03\u7f6e\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u597d\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u6bcf\u5468\u4e09\u665a\u4e0a\u6559\u793e\u533a\u8001\u5e74\u4eba\u63d2\u82b1\u8bfe\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u660e\u767d\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u7537\u670b\u53cb\u5728\u4e3d\u6c5f\u5f00\u9752\u65c5\uff0c\u6211\u4eec\u8f6e\u6d41\u5f80\u8fd4\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u8bb0\u4f4f\u3002"
+            }
+        ]
+    },
+    {
+        "id": "zh_13",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u53eb\u6f58\u8fb0\uff0c26\u5c81\uff0c\u662f\u957f\u6c99\u7684\u72ec\u7acb\u6e38\u620f\u97f3\u4e50\u4eba\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u4e86\u89e3\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u5728\u5cb3\u9e93\u5c71\u811a\u4e0b\u79df\u4e86\u5730\u4e0b\u5ba4\u5f53\u5f55\u97f3\u68da\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u8bb0\u4e0b\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u5927\u5b66\u540c\u5b66\u80e1\u5609\u62c5\u4efb\u6211\u5de1\u6f14\u7684\u7ecf\u7eaa\u4eba\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u77e5\u9053\u3002"
+            }
+        ]
+    },
+    {
+        "id": "zh_14",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u662f\u9752\u5c9b\u7684\u6d77\u6d0b\u5de5\u7a0b\u5e08\u5b8b\u6770\uff0c42\u5c81\uff0c\u5e38\u51fa\u6d77\u505a\u6d6e\u6807\u7ef4\u62a4\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u597d\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u592a\u592a\u7ecf\u8425\u4e00\u5bb6\u5e06\u8239\u57f9\u8bad\u5b66\u6821\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u660e\u767d\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u7236\u4eb2\u9000\u4f11\u540e\u5728\u5bb6\u517b\u6d77\u53c2\uff0c\u6211\u8d1f\u8d23\u7f51\u5e97\u5ba2\u670d\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u8bb0\u4f4f\u3002"
+            }
+        ]
+    },
+    {
+        "id": "zh_15",
+        "language": "chinese",
+        "turns": [
+            {
+                "role": "user",
+                "content": "\u6211\u53eb\u6885\u5b50\uff0c\u662f\u6fb3\u95e8\u7684\u70d8\u7119\u5e08\u5085\uff0c35\u5c81\uff0c\u4e3b\u6253\u65e0\u7cd6\u86cb\u7cd5\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u597d\u7684\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u6211\u6bcf\u5929\u51cc\u6668\u4e24\u70b9\u5f00\u59cb\u51c6\u5907\u9762\u7cca\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u77e5\u9053\u3002"
+            },
+            {
+                "role": "user",
+                "content": "\u5f1f\u5f1f\u5728\u73e0\u6d77\u7ecf\u8425\u5496\u5561\u8f66\uff0c\u5e38\u6765\u5e2e\u6211\u9001\u8d27\u3002"
+            },
+            {
+                "role": "assistant",
+                "content": "\u660e\u767d\u3002"
+            }
+        ]
+    }
+]

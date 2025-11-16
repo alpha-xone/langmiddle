@@ -1,0 +1,103 @@
+# =====================================================
+# DeepSeek Models
+# =====================================================
+
+deepseek:
+  model: deepseek-chat
+
+deepseek-r1:
+  model: deepseek-reasoner
+
+# =====================================================
+# Silicon Flow Models
+# =====================================================
+
+# > DeepSeek
+
+sf-deepseek:
+  model: deepseek-ai/DeepSeek-V3.1
+  model_provider: openai
+  base_url: ${SF_BASE_URL}
+  api_key: ${SF_API_KEY}
+
+sf-deepseek-r1:
+  model: deepseek-ai/DeepSeek-R1
+  model_provider: openai
+  base_url: ${SF_BASE_URL}
+  api_key: ${SF_API_KEY}
+
+sf-deepseek-ocr:
+  model: deepseek-ai/DeepSeek-OCR
+  model_provider: openai
+  base_url: ${SF_BASE_URL}
+  api_key: ${SF_API_KEY}
+
+# > Kimi
+
+sf-kimi:
+  model: moonshotai/Kimi-K2-Instruct-0905
+  model_provider: openai
+  base_url: ${SF_BASE_URL}
+  api_key: ${SF_API_KEY}
+
+# > Qwen
+
+sf-qwen:
+  model: Qwen/Qwen3-Next-80B-A3B-Instruct
+  model_provider: openai
+  base_url: ${SF_BASE_URL}
+  api_key: ${SF_API_KEY}
+
+sf-qwen-think:
+  model: Qwen/Qwen3-Next-80B-A3B-Thinking
+  model_provider: openai
+  base_url: ${SF_BASE_URL}
+  api_key: ${SF_API_KEY}
+
+sf-qwen-image:
+  model: Qwen/Qwen-Image
+  model_provider: openai
+  base_url: ${SF_BASE_URL}
+  api_key: ${SF_API_KEY}
+
+# > Kolors
+
+sf-kolors:
+  model: Kwai-Kolors/Kolors
+  model_provider: openai
+  base_url: ${SF_BASE_URL}
+  api_key: ${SF_API_KEY}
+
+# > Ring
+
+sf-ling:
+  model: inclusionAI/Ring-flash-2.0
+  model_provider: openai
+  base_url: ${SF_BASE_URL}
+  api_key: ${SF_API_KEY}
+
+sf-ling-1t:
+  model: inclusionAI/Ring-1T
+  model_provider: openai
+  base_url: ${SF_BASE_URL}
+  api_key: ${SF_API_KEY}
+
+# > Embeddings
+
+sf-baai:
+  model: Pro/BAAI/bge-m3
+  provider: openai
+  base_url: ${SF_BASE_URL}
+  api_key: ${SF_API_KEY}
+
+sf-qwen-embedding:
+  model: Qwen/Qwen3-Embedding-0.6B
+  provider: openai
+  base_url: ${SF_BASE_URL}
+  api_key: ${SF_API_KEY}
+
+sf-qwen-embedding-8b:
+  model: Qwen/Qwen3-Embedding-8B
+  provider: openai
+  base_url: ${SF_BASE_URL}
+  api_key: ${SF_API_KEY}
