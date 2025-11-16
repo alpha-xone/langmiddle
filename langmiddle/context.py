@@ -284,7 +284,6 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             model=model_to_use,
             extraction_prompt=self.extraction_prompt,
             messages=messages,
-            use_structured_model=self.extraction_model is not None,
         )
         if extracted is None:
             logger.error("Fact extraction failed.")
@@ -349,7 +348,6 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                 update_prompt=self.update_prompt,
                 current_facts=existing_facts,
                 new_facts=new_facts,
-                use_structured_model=self.actions_model is not None,
             )
 
             if actions is None:
@@ -608,15 +606,6 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
 
             curr_ids = [fact["id"] for fact in self.core_facts + self.current_facts if fact.get("id")]
 
-            added_context = []
-            if self.core_facts:
-                added_context.append(
-                    SystemMessage(
-                        content=self.core_prompt.format(basic_info=formatted_facts(self.core_facts)),
-                        additional_kwargs={CONTEXT_TAG: True},
-                    )
-                )
-
             # Load context-specific memories using atomic query breaking
             if self.embedder is not None and self.model is not None:
                 # Extract user queries from last message
@@ -656,14 +645,27 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                         logger.error(f"Error querying facts for atomic query '{atomic_query[:50]}...': {e}")
                         continue
 
+            # Combine core facts and context-specific facts into a single system message
+            added_context = []
+            if self.core_facts or self.current_facts:
+                # Build combined context content
+                context_parts = []
+
+                if self.core_facts:
+                    context_parts.append(self.core_prompt.format(basic_info=formatted_facts(self.core_facts)))
+
                 if self.current_facts:
                     logger.debug(f"Applying {len(self.current_facts)} context-specific facts")
-                    added_context.append(
-                        SystemMessage(
-                            content=self.memory_prompt.format(facts=formatted_facts(self.current_facts)),
-                            additional_kwargs={CONTEXT_TAG: True},
-                        )
+                    context_parts.append(self.memory_prompt.format(facts=formatted_facts(self.current_facts)))
+
+                # Combine into single system message
+                combined_content = "\n\n".join(context_parts)
+                added_context.append(
+                    SystemMessage(
+                        content=combined_content,
+                        additional_kwargs={CONTEXT_TAG: True},
                     )
+                )
 
             if not added_context and context_messages:
                 added_context.extend(context_messages)

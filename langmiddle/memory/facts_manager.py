@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from langchain.chat_models import BaseChatModel
 from langchain.embeddings import Embeddings
 from langchain_core.messages import AnyMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -73,6 +74,9 @@ def _invoke_structured_model(
     if not isinstance(model, Runnable):
         logger.error(f"[{function_name}] Model is not a Runnable: {type(model)}")
         return fallback_value
+
+    if isinstance(model, BaseChatModel):
+        model = model.with_structured_output(expected_type)
 
     try:
         result: Any = (
