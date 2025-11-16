@@ -16,17 +16,20 @@ across multiple conversation sessions.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
-from typing import Any
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 from dotenv import load_dotenv
 from langchain.agents.middleware import AgentMiddleware, AgentState
+from langchain.agents.middleware.summarization import DEFAULT_SUMMARY_PROMPT
 from langchain.chat_models import init_chat_model
 from langchain.embeddings import Embeddings, init_embeddings
 from langchain.messages import SystemMessage
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AnyMessage,
+    HumanMessage,
     MessageLikeRepresentation,
     RemoveMessage,
 )
@@ -57,7 +60,89 @@ from .utils.logging import get_graph_logger
 from .utils.messages import split_messages
 from .utils.runtime import auth_storage, get_user_id
 
-TokenCounter = Callable[[Iterable[MessageLikeRepresentation]], int]
+
+# Type protocols for better type safety
+class TokenCounter(Protocol):
+    """Protocol for token counting strategies."""
+
+    def __call__(self, messages: Iterable[MessageLikeRepresentation]) -> int:
+        """Count tokens in messages."""
+        ...
+
+
+# Configuration dataclasses
+@dataclass
+class ExtractionConfig:
+    """Configuration for fact extraction behavior."""
+
+    interval: int = 3
+    """Extract facts every N agent completions."""
+
+    max_tokens: int | None = None
+    """Token threshold to trigger extraction (overrides interval if set)."""
+
+    prompt: str = DEFAULT_FACTS_EXTRACTOR
+    """Prompt template for extracting facts."""
+
+    update_prompt: str = DEFAULT_FACTS_UPDATER
+    """Prompt template for updating existing facts."""
+
+
+@dataclass
+class SummarizationConfig:
+    """Configuration for conversation summarization behavior."""
+
+    max_tokens: int = 8000
+    """Token threshold to trigger summarization."""
+
+    keep_ratio: float = 0.5
+    """Ratio of recent messages to keep after summarization (0.5 = keep last 50%)."""
+
+    prompt: str = DEFAULT_SUMMARY_PROMPT
+    """Prompt template for generating summaries."""
+
+
+@dataclass
+class ContextConfig:
+    """Configuration for context injection behavior."""
+
+    core_namespaces: list[list[str]] = field(default_factory=lambda: ALWAYS_LOADED_NAMESPACES)
+    """List of namespaces to always load into context."""
+
+    core_prompt: str = DEFAULT_BASIC_INFO_INJECTOR
+    """Prompt template for core facts injection."""
+
+    memory_prompt: str = DEFAULT_FACTS_INJECTOR
+    """Prompt template for context-specific facts injection."""
+
+
+@dataclass
+class _MiddlewareState:
+    """Internal state tracking for the middleware (private)."""
+
+    turn_count: int = 0
+    """Number of agent turns processed."""
+
+    extraction_count: int = 0
+    """Number of fact extractions performed."""
+
+    user_id: str = ""
+    """Current user identifier."""
+
+    core_facts: list[dict[str, Any]] = field(default_factory=list)
+    """Cached core facts (loaded once per session)."""
+
+    current_facts: list[dict[str, Any]] = field(default_factory=list)
+    """Context-specific facts for current conversation."""
+
+    embeddings_cache: dict[str, list[float]] = field(default_factory=dict)
+    """Cache for reusing embeddings to improve performance."""
+
+    def reset_session_state(self) -> None:
+        """Reset per-session state while keeping caches."""
+        self.turn_count = 0
+        self.current_facts.clear()
+
 
 load_dotenv()
 
@@ -66,6 +151,7 @@ logger = get_graph_logger(__name__)
 logger._logger.propagate = False
 
 CONTEXT_TAG = "langmiddle/context"
+SUMMARY_TAG = "langmiddle/summary"
 LOGS_KEY = "langmiddle:context:trace"
 
 
@@ -94,7 +180,10 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         update_prompt: Custom prompt string guiding facts updating.
         core_prompt: Custom prompt string for core facts injection.
         memory_prompt: Custom prompt string for context-specific facts injection.
-        max_tokens_before_extraction: Token threshold to trigger extraction (None = every completion).
+        max_tokens_before_summarization: Token threshold to trigger summarization.
+        max_tokens_before_extraction: Token threshold to trigger extraction (None = use interval).
+        extraction_interval: Extract facts every N agent completions (default: 3).
+        summary_prompt: Prompt template for generating conversation summaries.
         token_counter: Function to count tokens in messages.
         embeddings_cache: Cache for reusing embeddings to improve performance.
 
@@ -115,11 +204,18 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         core_namespaces: list[list[str]] = ALWAYS_LOADED_NAMESPACES,
         core_prompt: str = DEFAULT_BASIC_INFO_INJECTOR,
         memory_prompt: str = DEFAULT_FACTS_INJECTOR,
+        max_tokens_before_summarization: int | None = 8000,
         max_tokens_before_extraction: int | None = None,
+        extraction_interval: int = 3,
+        summary_prompt: str = DEFAULT_SUMMARY_PROMPT,
         token_counter: TokenCounter = count_tokens_approximately,
         model_kwargs: dict[str, Any] | None = None,
         embedder_kwargs: dict[str, Any] | None = None,
         backend_kwargs: dict[str, Any] | None = None,
+        # Configuration objects
+        extraction_config: ExtractionConfig | None = None,
+        summarization_config: SummarizationConfig | None = None,
+        context_config: ContextConfig | None = None,
     ) -> None:
         """Initialize the context engineer.
 
@@ -132,21 +228,69 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             core_namespaces: List of namespaces to always load into context.
             core_prompt: Custom prompt string for core facts injection.
             memory_prompt: Custom prompt string for context-specific facts injection.
+            max_tokens_before_summarization: Token threshold to trigger summarization.
+                If None, summarization is disabled. Default: 8000 tokens.
             max_tokens_before_extraction: Token threshold to trigger extraction.
-                If None, extraction runs on every agent completion.
+                If None, uses extraction_interval instead.
+            extraction_interval: Extract facts every N agent completions.
+                Default: 3 (extract every 3rd completion). Reduces LLM overhead.
+            summary_prompt: Prompt template for generating summaries.
+                Uses official LangGraph DEFAULT_SUMMARY_PROMPT by default.
             token_counter: Function to count tokens in messages.
             model_kwargs: Additional keyword arguments for model initialization.
             embedder_kwargs: Additional keyword arguments for embedder initialization.
             backend_kwargs: Additional keyword arguments for backend initialization.
+            extraction_config: Optional ExtractionConfig object (overrides individual params).
+            summarization_config: Optional SummarizationConfig object (overrides individual params).
+            context_config: Optional ContextConfig object (overrides individual params).
 
         Note:
             Operations return trace logs under the 'langmiddle:context:trace' key
             for backend monitoring and debugging.
+
+            Configuration objects provide a cleaner API but are optional.
+            Individual parameters are maintained for backward compatibility.
         """
         super().__init__()
 
-        self.max_tokens_before_extraction: int | None = max_tokens_before_extraction
+        # Build configuration objects from params or use provided
+        self._extraction_config = extraction_config or ExtractionConfig(
+            interval=extraction_interval,
+            max_tokens=max_tokens_before_extraction,
+            prompt=extraction_prompt,
+            update_prompt=update_prompt,
+        )
+
+        self._summarization_config = summarization_config or SummarizationConfig(
+            max_tokens=max_tokens_before_summarization or 8000,
+            prompt=summary_prompt,
+        )
+
+        self._context_config = context_config or ContextConfig(
+            core_namespaces=core_namespaces,
+            core_prompt=core_prompt,
+            memory_prompt=memory_prompt,
+        )
+
+        # Internal state management
+        self._state = _MiddlewareState()
+
+        # Public attributes for backward compatibility
+        self.max_tokens_before_summarization: int | None = self._summarization_config.max_tokens
+        self.max_tokens_before_extraction: int | None = self._extraction_config.max_tokens
+        self.extraction_interval: int = self._extraction_config.interval
+        self.summary_prompt: str = self._summarization_config.prompt
+        self.extraction_prompt = self._extraction_config.prompt
+        self.update_prompt = self._extraction_config.update_prompt
+        self.memory_prompt = self._context_config.memory_prompt
+        self.core_prompt = self._context_config.core_prompt
+        self.core_namespaces = self._context_config.core_namespaces
         self.token_counter: TokenCounter = token_counter
+
+        # Backward compatible state access
+        self.core_facts: list[dict[str, Any]] = self._state.core_facts
+        self.current_facts: list[dict[str, Any]] = self._state.current_facts
+        self.user_id: str = self._state.user_id
 
         # Ensure valid backend and model configuration
         if backend.lower() != "supabase":
@@ -154,22 +298,11 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             backend = "supabase"
 
         self.backend: str = backend.lower()
-        self.user_id: str = ""
-
-        self.extraction_prompt = extraction_prompt
-        self.update_prompt = update_prompt
-        self.memory_prompt = memory_prompt
-        self.core_prompt = core_prompt
-        self.core_namespaces = core_namespaces
-        self.core_facts: list[dict[str, Any]] = []
-        # Maintain a list of current facts for previous rounds of communications
-        self.current_facts: list[dict[str, Any]] = []
 
         self.model: BaseChatModel | None = None
         self.embedder: Embeddings | None = None
         self.storage: Any = None
-        self._extraction_count: int = 0
-        self.embeddings_cache: dict[str, list[float]] = {}  # Cache for reusing embeddings
+        self.embeddings_cache: dict[str, list[float]] = self._state.embeddings_cache  # Backward compat
 
         # Initialize LLM model
         if isinstance(model, str):
@@ -229,10 +362,44 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                 f"embedder: {self.embedder.__class__.__name__} / backend: {self.backend}."
             )
 
+    # === Property Accessors ===
+
+    @property
+    def turn_count(self) -> int:
+        """Number of agent turns processed."""
+        return self._state.turn_count
+
+    @property
+    def extraction_count(self) -> int:
+        """Number of fact extractions performed."""
+        return self._state.extraction_count
+
+    @property
+    def extraction_config(self) -> ExtractionConfig:
+        """Configuration for extraction behavior."""
+        return self._extraction_config
+
+    @property
+    def summarization_config(self) -> SummarizationConfig:
+        """Configuration for summarization behavior."""
+        return self._summarization_config
+
+    @property
+    def context_config(self) -> ContextConfig:
+        """Configuration for context injection behavior."""
+        return self._context_config
+
+    # === Cache Management ===
+
     def clear_embeddings_cache(self) -> None:
         """Clear the embeddings cache to free memory."""
-        self.embeddings_cache.clear()
+        self._state.embeddings_cache.clear()
         logger.debug("Embeddings cache cleared")
+
+    def reset_session_state(self) -> None:
+        """Reset per-session state (turn count, current facts) while keeping caches."""
+        self._state.reset_session_state()
+        logger.debug("Session state reset")
 
     def get_cache_stats(self) -> dict[str, Any]:
         """Get statistics about the embeddings cache.
@@ -241,12 +408,50 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             Dictionary with cache statistics including size and sample keys
         """
         return {
-            "size": len(self.embeddings_cache),
-            "sample_keys": list(self.embeddings_cache.keys())[:5] if self.embeddings_cache else [],
+            "size": len(self._state.embeddings_cache),
+            "sample_keys": list(self._state.embeddings_cache.keys())[:5] if self._state.embeddings_cache else [],
         }
 
+    # === Summarization Operations ===
+
+    def _should_summarize(self, messages: list[AnyMessage]) -> bool:
+        """Determine if summarization should be triggered.
+
+        Args:
+            messages: List of conversation messages.
+
+        Returns:
+            True if summarization should run, False otherwise.
+        """
+        if self._summarization_config.max_tokens is None:
+            return False
+
+        # Count tokens excluding tagged messages (context, old summaries)
+        conversation_messages = [
+            msg for msg in messages
+            if not msg.additional_kwargs.get(CONTEXT_TAG) and
+            not msg.additional_kwargs.get(SUMMARY_TAG)
+        ]
+
+        if not conversation_messages:
+            return False
+
+        total_tokens = self.token_counter(conversation_messages)
+        return total_tokens >= self._summarization_config.max_tokens
+
+    def _summarization_should_run(self, messages: list[AnyMessage]) -> bool:
+        """Alias for _should_summarize for consistent naming."""
+        return self._should_summarize(messages)
+
+    # === Extraction Operations ===
+
     def _should_extract(self, messages: list[AnyMessage]) -> bool:
-        """Determine if extraction should be triggered based on token count.
+        """Determine if extraction should be triggered based on multiple strategies.
+
+        Implements smart extraction triggers:
+        1. Interval-based: Extract every N turns (default: every 3 completions)
+        2. Token-based: Extract when recent messages exceed threshold
+        3. Summary filtering: Skip extraction from summary-tagged messages
 
         Args:
             messages: List of conversation messages.
@@ -254,15 +459,70 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         Returns:
             True if extraction should run, False otherwise.
         """
-        if not messages:
+        # Filter out summary messages - never extract facts from summaries
+        non_summary_messages = [
+            msg for msg in messages
+            if not msg.additional_kwargs.get(SUMMARY_TAG)
+        ]
+
+        if not non_summary_messages:
             return False
 
-        if self.max_tokens_before_extraction is None:
-            # Always extract if no threshold is set
+        # Strategy 1: Interval-based extraction (default mode)
+        # Extract every N completions to reduce overhead
+        self._state.turn_count += 1
+        if self._state.turn_count % self._extraction_config.interval == 0:
+            logger.debug(f"Extraction triggered by interval (turn {self._state.turn_count})")
             return True
 
-        total_tokens: int = self.token_counter(messages)
-        return total_tokens >= self.max_tokens_before_extraction
+        # Strategy 2: Token-based extraction (fallback)
+        # Extract if recent messages have significant content
+        if self._extraction_config.max_tokens is not None:
+            recent_tokens = self.token_counter(non_summary_messages[-10:])
+            if recent_tokens >= self._extraction_config.max_tokens:
+                logger.debug(f"Extraction triggered by token threshold ({recent_tokens} tokens)")
+                return True
+
+        return False
+
+    def _extraction_should_run(self, messages: list[AnyMessage]) -> bool:
+        """Alias for _should_extract for consistent naming."""
+        return self._should_extract(messages)
+
+    # === Context Operations ===
+
+    def _summarize_conversation(self, messages: Sequence[AnyMessage | dict]) -> str | None:
+        """Generate a summary of conversation messages.
+
+        Args:
+            messages: Sequence of messages to summarize.
+
+        Returns:
+            Summary text, or None if summarization fails.
+        """
+        if not messages or self.model is None:
+            return None
+
+        try:
+            # Format messages for the summary prompt
+            formatted_messages = "\n".join([
+                f"{getattr(msg, 'type', 'message')}: {getattr(msg, 'content', str(msg))}"
+                if hasattr(msg, 'type') else str(msg)
+                for msg in messages
+            ])
+
+            response = self.model.invoke(
+                self._summarization_config.prompt.format(messages=formatted_messages)
+            )
+            summary = str(response.content).strip()
+            logger.info(f"Generated summary of {len(messages)} messages")
+            return summary
+
+        except Exception as e:
+            logger.error(f"Failed to generate summary: {e}")
+            return None
+
+    # === Fact Extraction Operations ===
 
     def _extract_facts(self, messages: Sequence[AnyMessage | dict]) -> list[dict] | None:
         """Extract facts from conversation messages.
@@ -282,7 +542,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
 
         extracted = extract_facts(
             model=model_to_use,
-            extraction_prompt=self.extraction_prompt,
+            extraction_prompt=self._extraction_config.prompt,
             messages=messages,
         )
         if extracted is None:
@@ -290,6 +550,8 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             return None
 
         return [fact.model_dump() for fact in extracted.facts]
+
+    # === Fact Query Operations ===
 
     def _query_existing_facts(
         self,
@@ -318,7 +580,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             embedder=self.embedder,
             new_facts=new_facts,
             user_id=user_id,
-            embeddings_cache=self.embeddings_cache,
+            embeddings_cache=self._state.embeddings_cache,
         )
 
     def _determine_actions(
@@ -345,7 +607,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
 
             actions = get_actions(
                 model=model_to_use,
-                update_prompt=self.update_prompt,
+                update_prompt=self._extraction_config.update_prompt,
                 current_facts=existing_facts,
                 new_facts=new_facts,
             )
@@ -394,9 +656,11 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             embedder=self.embedder,
             user_id=user_id,
             actions=actions,
-            embeddings_cache=self.embeddings_cache,
+            embeddings_cache=self._state.embeddings_cache,
             model=self.model,
         )
+
+    # === Lifecycle Hooks ===
 
     def after_agent(
         self,
@@ -408,6 +672,9 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         This hook is called after each agent run, extracting facts from
         the conversation and managing them in the storage backend.
 
+        Filters out summary-tagged messages to avoid extracting facts from
+        compressed summaries, which would lose detail and accuracy.
+
         Args:
             state: Current agent state containing messages
             runtime: Runtime context with user_id and auth_token
@@ -415,7 +682,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         Returns:
             Dict with trace logs under 'langmiddle:context:trace' key, or None
         """
-        # Check if we should extract
+        # Get messages and check if extraction should run
         messages: list[AnyMessage] = state.get("messages", [])
         if not self._should_extract(messages):
             return None
@@ -423,6 +690,16 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         # Ensure storage is initialized
         if self.storage is None or self.model is None or self.embedder is None:
             logger.warning("Context engineer not fully initialized; skipping extraction")
+            return None
+
+        # Filter out summary messages - never extract facts from summaries
+        extractable_messages = [
+            msg for msg in messages
+            if not msg.additional_kwargs.get(SUMMARY_TAG)
+        ]
+
+        if not extractable_messages:
+            logger.debug("No extractable messages after filtering summaries")
             return None
 
         # Extract context information
@@ -448,12 +725,12 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
 
         credentials: dict[str, Any] = auth_status.get("credentials", {})
         trace_logs = []
-        self._extraction_count += 1
+        self._state.extraction_count += 1
 
         try:
-            # Step 1: Extract facts from messages
-            logger.debug(f"Extracting facts from {len(messages)} messages")
-            new_facts = self._extract_facts(messages)
+            # Step 1: Extract facts from non-summary messages
+            logger.debug(f"Extracting facts from {len(extractable_messages)} messages (filtered {len(messages) - len(extractable_messages)} summaries)")
+            new_facts = self._extract_facts(extractable_messages)
 
             if not new_facts:
                 logger.debug("No facts extracted from conversation")
@@ -550,7 +827,13 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         """Context engineering before agent execution.
 
         Loads and injects relevant memories (core facts and context-specific facts)
-        into the message history before the agent processes the request.
+        into the message history before the agent processes the request. Also handles
+        conversation summarization when token limits are approached.
+
+        Message structure after processing:
+        1. SystemMessage [langmiddle/context] - Core facts (cached)
+        2. HumanMessage [langmiddle/summary] - Summary of old messages (if needed)
+        3. Recent messages (last 50% after summarization)
 
         Args:
             state: Current agent state
@@ -591,20 +874,52 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         trace_logs = []
 
         try:
-            # Split messages into context and recent messages
-            context_messages, recent_messages = split_messages(messages, by_tag=CONTEXT_TAG)
+            # Step 1: Check if summarization is needed
+            should_summarize = self._should_summarize(messages)
+            summary_text = None
+            conv_messages = messages
+
+            if should_summarize:
+                # Split out context messages (don't summarize these)
+                context_msgs, conv_msgs = split_messages(messages, by_tag=CONTEXT_TAG)
+
+                # Further filter out old summaries
+                filtered_msgs = []
+                for msg in conv_msgs:
+                    if isinstance(msg, dict):
+                        additional_kwargs = msg.get("additional_kwargs", {})
+                    else:
+                        additional_kwargs = getattr(msg, "additional_kwargs", {})
+                    if not additional_kwargs.get(SUMMARY_TAG):
+                        filtered_msgs.append(msg)
+                conv_msgs = filtered_msgs
+
+                # Calculate split point (keep recent 50%)
+                if len(conv_msgs) > 2:
+                    keep_count = len(conv_msgs) // 2
+                    msgs_to_summarize = conv_msgs[:-keep_count]
+                    conv_messages = conv_msgs[-keep_count:]
+
+                    # Generate summary
+                    summary_text = self._summarize_conversation(msgs_to_summarize)
+                    if summary_text:
+                        trace_logs.append(f"Summarized {len(msgs_to_summarize)} messages")
+                        logger.info(f"Summarized {len(msgs_to_summarize)} messages, keeping {keep_count} recent")
+            else:
+                # No summarization - split messages normally
+                context_messages, conv_messages = split_messages(messages, by_tag=CONTEXT_TAG)
 
             # Load core memories (cached after first load)
-            if not self.core_facts:
-                self.core_facts = self.storage.backend.query_facts(
+            if not self._state.core_facts:
+                self._state.core_facts = self.storage.backend.query_facts(
                     credentials=credentials,
-                    filter_namespaces=self.core_namespaces,
+                    filter_namespaces=self._context_config.core_namespaces,
                     match_count=30,
                 )
-                if self.core_facts:
-                    logger.debug(f"Loaded {len(self.core_facts)} core facts")
+                if self._state.core_facts:
+                    logger.debug(f"Loaded {len(self._state.core_facts)} core facts")
 
-            curr_ids = [fact["id"] for fact in self.core_facts + self.current_facts if fact.get("id")]
+            curr_ids = [fact["id"] for fact in self._state.core_facts + self._state.current_facts if fact.get("id")]
 
             # Load context-specific memories using atomic query breaking
             if self.embedder is not None and self.model is not None:
@@ -639,55 +954,54 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                         # Add facts that aren't already present
                         for fact in facts:
                             if fact.get("content") and fact.get("id") and fact["id"] not in curr_ids:
-                                self.current_facts.append(fact)
+                                self._state.current_facts.append(fact)
                                 curr_ids.append(fact["id"])
                     except Exception as e:
                         logger.error(f"Error querying facts for atomic query '{atomic_query[:50]}...': {e}")
                         continue
 
-            # Combine core facts and context-specific facts into a single system message
-            added_context = []
-            if self.core_facts or self.current_facts:
-                # Build combined context content
-                context_parts = []
+            # Step 2: Build context message with core + current facts
+            context_parts = []
 
-                if self.core_facts:
-                    context_parts.append(self.core_prompt.format(basic_info=formatted_facts(self.core_facts)))
+            if self._state.core_facts:
+                context_parts.append(self._context_config.core_prompt.format(basic_info=formatted_facts(self._state.core_facts)))
 
-                if self.current_facts:
-                    logger.debug(f"Applying {len(self.current_facts)} context-specific facts")
-                    context_parts.append(self.memory_prompt.format(facts=formatted_facts(self.current_facts)))
+            if self._state.current_facts:
+                logger.debug(f"Applying {len(self._state.current_facts)} context-specific facts")
+                context_parts.append(self._context_config.memory_prompt.format(facts=formatted_facts(self._state.current_facts)))            # Step 3: Build final message queue
+            result_messages: list[Any] = [RemoveMessage(id=REMOVE_ALL_MESSAGES)]
 
-                # Combine into single system message
+            # Add context message (core + current facts) if we have any
+            if context_parts:
                 combined_content = "\n\n".join(context_parts)
-                added_context.append(
+                result_messages.append(
                     SystemMessage(
                         content=combined_content,
                         additional_kwargs={CONTEXT_TAG: True},
                     )
                 )
 
-            if not added_context and context_messages:
-                added_context.extend(context_messages)
+            # Add summary message if generated
+            if summary_text:
+                result_messages.append(
+                    HumanMessage(
+                        content=f"## Previous Conversation Summary\n{summary_text}",
+                        additional_kwargs={SUMMARY_TAG: True},
+                    )
+                )
 
-            if not added_context:
-                return None
+            # Add conversation messages (recent only if summarized, all otherwise)
+            result_messages.extend(conv_messages)
 
-            # Log summary of injected context
-            total_core = len(self.core_facts)
-            total_context = len(self.current_facts)
+            # Log summary of operations
+            total_core = len(self._state.core_facts)
+            total_context = len(self._state.current_facts)
             if total_core > 0 or total_context > 0:
                 summary = f"Injected {total_core} core + {total_context} context facts"
                 trace_logs.append(summary)
                 logger.info(summary)
 
-            result = {
-                "messages": [
-                    RemoveMessage(id=REMOVE_ALL_MESSAGES),
-                    *added_context,
-                    *recent_messages,
-                ],
-            }
+            result = {"messages": result_messages}
 
             if trace_logs:
                 result[LOGS_KEY] = trace_logs
