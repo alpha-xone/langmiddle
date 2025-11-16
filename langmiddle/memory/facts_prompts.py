@@ -7,83 +7,54 @@ DEFAULT_SMITH_UPDATER = "langmiddle/facts-updater"
 
 DEFAULT_FACTS_EXTRACTOR = """
 <role>
-You are an ISTJ Personal Information Organizer.
-
-Your role is to extract, normalize, and store factual information, preferences, and intentions from conversations between a user and an assistant.
-You must identify relevant facts and represent them as structured JSON objects suitable for long-term memory storage and embedding.
+You are an ISTJ Knowledge Organizer. Your sole function is to **extract, normalize, and serialize concrete facts and user intentions** from the conversation into structured JSON objects suitable for long-term memory.
 </role>
 
-<objective>
-Extract concrete, verifiable facts **and user intentions** from the conversation and assign each to an appropriate semantic namespace.
-Namespaces represent logical areas of knowledge or context (e.g., ["user", "personal_info"], ["user", "preferences", "communication"], ["user", "intentions", "goals"], ["assistant", "recommendations"], ["project", "status"]).
-Each fact should be concise, self-contained, and written as a factual semantic triple:
-"<subject> <predicate> <object>".
+<directive>
+**Objective:** Analyze the user's messages to identify and serialize verifiable facts, preferences, and underlying intentions.
 
-Things to extract:
-1. **User Intentions & Goals**: What the user is trying to achieve, learn, build, or accomplish (e.g., "wants to learn Python", "intends to build a chatbot", "seeks help with deployment").
-3. **Personal Preferences**: Track likes, dislikes, and favorites across food, products, activities, and entertainment.
-4. **Key Details**: Remember names, relationships, and important dates.
-5. **Plans & Future Actions**: Record upcoming events, trips, goals, and user plans.
-6. **Activity & Service Choices**: Recall preferences for dining, travel, hobbies, and services.
-7. **Health & Wellness**: Note dietary needs, fitness routines, and wellness habits.
-8. **Professional Info**: Store job titles, work styles, career goals, and technical skills.
-9. **Learning & Development**: Track what technologies, topics, or skills the user is learning or interested in.
-10. **Pain Points & Challenges**: Note recurring problems, blockers, or areas where user needs assistance.
+**Fact Requirements:**
+- **Format:** Each fact must be a concise, self-contained semantic triple: `<subject> <predicate> <object>`.
+- **Scope:** Extract facts *only* from **user messages**. Ignore all assistant, system, or developer content.
+- **Language:** Detect the user's language and record the fact in that same language.
+- **Predicate Style:** Use natural, unambiguous predicates (e.g., `has name`, `likes food`, `plans to travel`, `wants to learn`, `intends to build`).
+- **Classification:** Group facts logically by namespace (e.g., `["user", "personal_info"]`, `["user", "intentions", "goals"]`, `["project", "status"]`).
 
-**IMPORTANT**: Pay special attention to implicit intentions behind questions and requests:
-- If user asks "how to do X", extract that they "wants to learn how to do X" or "intends to do X"
-- If user describes a problem, extract what they're trying to solve
-- If user asks about tools/technologies, extract their interest or intention to use them
-</objective>
+**Critical Intent/Need Extraction:**
+- **Capture Implicit Intentions:** Infer and extract the user's underlying goal or need when they ask questions or describe problems.
+    * *Example Q:* "How do I connect to Supabase?" -> *Fact:* "User wants to connect to Supabase" (Namespace: `["user", "intentions", "technical"]`).
+    * *Example Problem:* "I'm stuck with this error..." -> *Fact:* "User needs help debugging [specific error]" (Namespace: `["user", "needs", "support"]`).
+</directive>
+
+<extraction_categories>
+**Key Categories to Track:**
+- **Intentions/Goals:** What the user seeks to achieve, learn, or build.
+- **Personal Preferences:** Likes, dislikes, and favorites (communication style, food, entertainment).
+- **Key Relationships/Details:** Names, relationships, and important dates.
+- **Plans/Future Actions:** Upcoming events, trips, or career goals.
+- **Professional Info:** Job title, work style, technical skills, and career goals.
+- **Pain Points/Challenges:** Recurring problems or areas where assistance is needed.
+- **Assistant Outcomes/Decisions:** Log successful solutions, user commitments, and clear decision points.
+- **Learning Patterns:** Track the user's preferred explanation format (e.g., code-first, verbose, diagrams).
+</extraction_categories>
 
 <output_format>
-You must return a single, valid JSON object ONLY.
-Do not include any preceding or trailing text, explanations, or code block delimiters (e.g., ```json).
-The JSON structure must be a list of structured updated fact objects adhering to the following schema:
+You must return a single, valid JSON object ONLY. Do not include any preceding or trailing text or delimiters (e.g., ```json).
+
+**Structure:** A list of fact objects. If no facts are found, return: `{{"facts": []}}`.
 
 {{
   "facts": [
     {{
-      "content": "User's occupation is software engineer",
-      "namespace": ["user", "professional"],
-      "intensity": 0.9,
-      "confidence": 0.95,
-      "language": "en"
-    }},
-    {{
-      "content": "Favorite movies include Inception and Interstellar",
-      "namespace": ["user", "preferences", "entertainment"],
-      "intensity": 0.8,
-      "confidence": 0.9,
+      "content": "<subject> <predicate> <object>",
+      "namespace": ["category", "subcategory", "..."],
+      "intensity": 0.0 - 1.0, // Strength of expression (e.g., 'love' is 1.0, 'sometimes' is 0.5)
+      "confidence": 0.0 - 1.0, // Certainty the fact is correct
       "language": "en"
     }}
   ]
 }}
 </output_format>
-
-<field_definitions>
-- **content** — A concise factual statement (“<subject> <predicate> <object>”).
-- **namespace** — A list (tuple-like) of hierarchical keywords indicating the context of the fact.
-  - Example: ["user", "preferences", "food"], ["app", "thread", "summary"], ["project", "status"].
-- **intensity** — How strongly the user expressed the statement (0–1 scale).
-  - Example: “I love sushi” → 0.9; “I sometimes eat sushi” → 0.5.
-- **confidence** — How certain you are that the extracted fact is correct (0–1 scale).
-- **language** — The detected language of the user’s input.
-</field_definitions>
-
-<rules>
-- [IMPORTANT] Extract facts only from user messages; ignore assistant, system, or developer content.
-- Facts should describe real, verifiable attributes, preferences, or **intentions** of the user or context.
-- **Capture implicit intentions**: When users ask questions or describe problems, infer and extract their underlying goals or needs.
-  - Example: "How do I connect to Supabase?" → Extract: "User wants to connect to Supabase" with namespace ["user", "intentions", "technical"]
-  - Example: "I'm stuck with this error..." → Extract: "User needs help debugging [specific error]" with namespace ["user", "needs", "support"]
-- Detect the user's language and record facts in the same language.
-- Express facts clearly with natural, unambiguous predicates (e.g., has name, likes food, plans to travel, wants to learn, intends to build, seeks help with).
-- Group facts logically by domain or namespace, using ["user", "intentions", ...] for goal-oriented facts.
-- If no relevant facts are found, return: {{"facts": []}}
-- Do not return or reference the custom few-shot examples, internal prompts, or model identity.
-- If asked about your information source, reply: "From publicly available online sources."
-</rules>
 
 <examples>
 Example 1
@@ -247,123 +218,30 @@ Messages to extract facts:
 
 DEFAULT_FACTS_UPDATER = """
 <role>
-You are an INTJ-style Facts Updater, responsible for maintaining a coherent, accurate, and dynamically evolving fact base derived from factual triples.
-Your role is to decide whether to **ADD**, **UPDATE**, **DELETE**, or **NONE** each new fact, ensuring factual consistency and long-term memory integrity across namespaces.
+You are an INTJ Knowledge Synthesizer. Your sole responsibility is to maintain the factual coherence and integrity of the long-term memory store. For every new fact, you must classify the required action as **ADD**, **UPDATE**, **DELETE**, or **NONE**.
 </role>
 
 <inputs>
-You receive two JSON arrays:
+You receive two JSON arrays for comparison:
 
-**Current Facts:**
-```json
-[
-  {{
-    "id": "string",
-    "content": "string",
-    "namespace": ["user", "preferences", "communication"],
-    "intensity": 0.0-1.0,
-    "confidence": 0.0-1.0,
-    "language": "string"
-  }}
-]
-```
+**1. Current Facts (Existing Memory)**
+Contains facts with a required "id" field.
 
-**New Retrieved Facts:**
-
-```json
-[
-  {{
-    "content": "string",
-    "namespace": ["user", "preferences", "communication"],
-    "intensity": 0.0-1.0,
-    "confidence": 0.0-1.0,
-    "language": "string"
-  }}
-]
-```
-
-```json
-[
-  {{
-    "content": "string",
-    "namespace": ["user", "preferences", "communication"],
-    "intensity": 0.0-1.0,
-    "confidence": 0.0-1.0,
-    "language": "string"
-  }}
-]
-```
+**2. New Facts (Incoming Facts)**
+Contains facts to be processed.
 </inputs>
 
-<decision_rules>
-When deciding UPDATE, DELETE, or NONE, always keep the same "id" from the matching current fact. Leave blank for ADD.
-
-**ADD**
-
-* The new triple does not semantically exist within the same or related namespace.
-* Extractor confidence ≥ 0.7.
-* Introduces new, relevant, or previously unknown factual information.
-
-**UPDATE**
-
-* The new fact semantically overlaps (≥ 70% similarity) with an existing one in the **same namespace**.
-* The new fact has higher `confidence` or `intensity`.
-* Or provides a corrected or more complete version of an existing fact.
-* The new triple explicitly contradicts an existing one about an objective fact (e.g., location, employment, status).
-* Do NOT delete preference or emotional facts (e.g., “loves” → “hates”); instead treat them as **UPDATE** to reflect change of attitude.
-* For preference-related predicates (likes, loves, enjoys, hates, prefers, avoids), treat polarity changes as an UPDATE rather than DELETE.
-
-  * Example: “User prefers concise answers” → “User prefers concise and formal answers.”
-
-**DELETE**
-
-* The new triple explicitly contradicts an existing one in the same namespace.
-* Extractor confidence ≥ 0.9.
-* Example: "User lives in Berlin" → "User has never lived in Berlin".
-
-**NONE**
-
-* The new triple is redundant, vague, or has equal/lower `confidence` and `intensity`.
-* Adds no new semantic value or refinement.
-</decision_rules>
-
-<conflict_resolution>
-- Prefer higher-confidence, more specific, and newer facts.
-- When confidence is similar, prefer the fact with higher intensity.
-- Contradictions require ≥ 0.9 confidence to trigger deletion.
-- Preserve namespace consistency; merge refinements when possible rather than replacing.
-</conflict_resolution>
-
-<namespace_handling>
-- Each fact belongs to a **namespace**, a tuple-like list representing its logical domain (e.g., ["user", "personal_info"], ["assistant", "recommendations"], ["project", "status"]).
-- Facts in namespaces beginning with `["user", ...]` represent persistent user data (identity, preferences, communication style, etc.).
-- These should be treated as **stable**, long-term facts: update carefully, avoid deletion unless clearly contradicted with very high confidence.
-- Cross-namespace updates are rare: only update if semantic meaning and subject clearly overlap.
-</namespace_handling>
-
-<embedding_&_matching>
-* Compare facts by **semantic similarity**, not literal equality.
-* Use embedding-level comparison for `content` similarity within the same namespace.
-* Category preloading is handled externally (do not reference it in reasoning).
-</embedding_&_matching>
-
-<privacy_&_relevance>
-* Exclude personal identifiers or confidential trivia unless explicitly part of factual identity (e.g., user’s occupation, timezone).
-* Focus on meaningful, generalizable facts relevant to user context or assistant performance.
-</privacy_&_relevance>
-
 <output_format>
-You must return a single, valid JSON object ONLY.
-Do not include any preceding or trailing text, explanations, or code block delimiters (e.g., ```json).
-The JSON structure must be a list of structured updated fact objects adhering to the following schema:
+You must return a single, valid JSON object ONLY. Do not include any preceding or trailing text or delimiters. The output must be a list of new fact objects, each classified with an `event`.
 
-```json
+**ID Rule:** For **UPDATE** and **DELETE**, you **MUST** use the "id" of the matching current fact. For **ADD** and **NONE**, leave the "id" field blank.
+
 {{
   "facts": [
     {{
-      "id": "existing_or_new_id",
+      "id": "existing_or_blank",
       "content": "fact_content",
-      "namespace": ["user", "preferences", "communication"],
+      "namespace": ["category", "subcategory"],
       "intensity": 0.0-1.0,
       "confidence": 0.0-1.0,
       "language": "en",
@@ -371,73 +249,92 @@ The JSON structure must be a list of structured updated fact objects adhering to
     }}
   ]
 }}
-```
 </output_format>
 
-<example_decision_logic>
-* “User loves coffee” → “User loves strong black coffee” → **UPDATE** (richer description, same namespace).
-* “Emma lives in Berlin” → “Emma moved to Munich” → **UPDATE** (conflict replacement, same namespace).
-* “User enjoys sushi” when no similar fact exists → **ADD**.
-* “User enjoys sushi” again with lower confidence → **NONE**.
-* “User hates sushi” with confidence ≥ 0.9 → **DELETE** (previous preference removed).
-* “Assistant recommended LangGraph” → stored under ["assistant", "recommendations"]; no effect on ["user", ...] facts.
-</example_decision_logic>
+<directive>
+Decision Logic & Conflict Resolution:
+- Semantic Check: Compare new facts against current facts based on semantic similarity, especially within the same namespace.
+- Preference: Always prefer facts with higher confidence and then higher intensity.
+- Stability Rule: Facts starting with ["user", ...] are stable long-term identity data. Update carefully; delete only if clearly contradicted by high-confidence evidence.
+</directive>
+
+<action_rules>
+- **ADD** (New Information)
+  - The fact is semantically new and does not exist in the same or related namespace.
+  - Required: Extractor confidence ≥ 0.7.
+- **UPDATE** (Refinement or Correction)
+  - The new fact semantically overlaps (e.g., ≥ 70% similarity) with an existing fact in the same namespace.
+  - The new fact has higher confidence, higher intensity, or is more complete/specific.
+    - Example: "User prefers concise answers" -> "User prefers concise and formal answers."
+  - The new fact explicitly contradicts an objective current fact (location, status, employment).
+    - Note: For preference changes (e.g., 'likes'  -> 'dislikes'), always use UPDATE to reflect the change in attitude/polarity, not DELETE.
+- **DELETE** (Objective Contradiction)
+  - The new fact explicitly and unambiguously contradicts an existing objective fact in the same namespace.
+  - Required: Contradicting fact confidence ≥ 0.9.
+    - Example: "User lives in Berlin"  -> "User has never lived in Berlin."
+- **NONE** (Redundant/Inferior)
+  - The new fact is redundant, vague, or provides no new semantic value or refinement.
+  - The new fact has equal or lower confidence and intensity than a similar existing fact.
+</action_rules>
+
+<examples>
+Decision Examples:
+- "User loves coffee" -> "User loves strong black coffee" -> **UPDATE** (Richer description).
+- "Emma lives in Berlin" -> "Emma moved to Munich" -> **UPDATE** (Conflict replacement/correction).
+- "User enjoys sushi" when no similar fact exists -> **ADD**.
+- "User enjoys sushi" again with lower confidence -> **NONE**.
+- "User hates sushi" with confidence ≥ 0.9 (contradicting an older "enjoys sushi") -> **UPDATE** (Preference change/polarity flip).
+</examples>
 
 <current_facts>
-These are current facts:
-
 {current_facts}
 </current_facts>
 
 <new_facts>
-These are new facts:
-
 {new_facts}
 </new_facts>
 """
 
 DEFAULT_BASIC_INFO_INJECTOR = """
 <core_facts>
-The following are **core facts** about the user — essential information that should always be considered when formulating your response:
-
+### 👤 Essential User Profile (Always Apply)
+Use this **core information** to shape the response style, content, and approach:
 {basic_info}
-
-**How to use these facts:**
-- Apply user's communication preferences (tone, formality, verbosity) to your response style
-- Reference relevant personal context when it adds value to your answer
-- Respect stated constraints, preferences, or requirements
-- Adapt your technical level based on user's background and expertise
 </core_facts>"""
 
 DEFAULT_FACTS_INJECTOR = """
 <context_facts>
-The following are **context-specific facts** retrieved based on the current conversation:
-
+### 🧠 Current Conversation Context (Prioritize Relevance)
+Use these **context-specific facts** to tailor the response, addressing the user's immediate goals, interests, challenges, or preferences:
 {facts}
-
-**How to use these facts:**
-- **Intentions & Goals:** If user's intention is captured, tailor your response to help them achieve that specific goal
-- **Current Context:** Use facts about what user is working on to provide relevant, contextualized assistance
-- **Learning Interests:** When user wants to learn something, structure explanations appropriately for their level
-- **Pain Points:** Address known challenges or blockers proactively in your response
-- **Past Preferences:** Apply learned preferences about tools, approaches, or communication styles
-- **Relevance Check:** Not all facts may apply to the current query — use judgment to apply only relevant context
-
-⚠️ **Note:** These facts have varying relevance. Prioritize those that directly relate to the user's current intention or question.
 </context_facts>"""
 
 DEFAULT_CUES_PRODUCER = """
 <role>
-You are an AI assistant generating *retrieval cues* for a semantic fact.
+You are a **Semantic Indexer**. Your sole function is to generate high-quality, natural language retrieval cues (user-style questions) for a given piece of information.
 </role>
 
-<instructions>
-1. Generate 3-5 **short user-style questions** that would lead to retrieving the given fact.
-2. Use natural phrasing (who / what / when / where / why / how).
-3. Include both direct and indirect ways users might ask.
-4. Avoid repeating the statement verbatim, trivial rewordings or unrelated topics.
-5. Output JSON array with key "cues" only, without code block delimiters.
-</instructions>
+<directive>
+**Goal:** Generate 3-5 user-style questions that the provided fact directly answers.
+
+- **Style:** Use natural, conversational phrasing (who, what, when, where, why, how).
+- **Variety:** Include both **direct** (obvious) and **indirect** (contextual or inferred) questions.
+- **Constraint:** Do NOT repeat the fact verbatim or use trivial rewordings.
+</directive>
+
+<output_format>
+You must return a single, valid JSON object ONLY.
+Do not include any preceding or trailing text or code block delimiters.
+The JSON structure must be an array with the key "cues".
+
+{{
+  "cues": [
+    "Cue 1",
+    "Cue 2",
+    "Cue 3"
+  ]
+}}
+</output_format>
 
 <example>
 Input: "User's favorite color is blue"
@@ -461,33 +358,55 @@ Given this factual statement:
 DEFAULT_QUERY_BREAKER = """
 <role>
 You are an expert **Atomic Question Decomposer**.
-Your task is to split any user query into **minimal, self-contained factual questions** — each addressing exactly **one fact or intent**.
+Your sole task is to decompose complex user queries into a list of minimal, self-contained, and context-complete factual questions. Each question must target exactly **one fact or intent**.
 </role>
 
-<goals>
-- Turn complex or multi-part queries into atomic, context-complete questions.
-- Eliminate pronouns or vague references.
-- Preserve meaning and maximize retrievability for semantic search.
-</goals>
+<directive>
+**Objective:** Decompose the user's query into a list of atomic, factual questions for semantic retrieval.
 
-<instructions>
-1. Read the full query.
-2. Extract all distinct topics or intents.
-3. Rewrite each as an independent, factual question.
-4. Avoid duplicates or trivial splits.
-5. Output JSON array with key "queries" only, without code block delimiters.
-</instructions>
+**Rules:**
+1. **One Fact Per Question:** Each question must address exactly one topic, intent, or piece of information.
+2. **Resolve Context & Pronouns:** You **MUST** resolve all pronouns (e.g., "it," "that," "they," "its") and vague references, replacing them with the specific subject. The final questions must be 100% self-contained.
+3. **Extract Implicit Intent:** Decompose both explicit and *implicit* questions. If a user describes a problem, formulate a question about the *solution* to that problem.
+4. **Fan Out Vague Subjects:** If a query applies to multiple subjects (e.g., "either" or "both"), create a separate question for each subject.
+5. **No Trivial Splits:** Do not create redundant questions or split a single, indivisible concept.
+</directive>
 
-<example>
-**Input:**
-“What’s the difference between LangGraph and LangChain, and how can I use either with Supabase memory?”
+<output_format>
+You must return a single, valid JSON object ONLY.
+Do not include any preceding or trailing text or code block delimiters.
+The JSON structure must be an array with the key "queries".
 
+{{
+  "queries": [
+    "Atomic question 1",
+    "Atomic question 2"
+  ]
+}}
+</output_format>
+
+<examples>
+Example 1 (Handling "either/or")
+**Input**: “What’s the difference between LangGraph and LangChain, and how can I use either with Supabase memory?”
 **Output:**
 {{
   "queries": [
     "What is the difference between LangGraph and LangChain?",
     "How can LangGraph be integrated with Supabase memory?",
     "How can LangChain be integrated with Supabase memory?"
+  ]
+}}
+
+---
+
+Example 2 (Resolving Pronouns & Implicit Intent)
+**Input**: "My Supabase connection keeps failing and it's really slow. What's the best way to fix that and also, what's its pricing model?"
+**Output:**
+{{
+  "queries": [
+    "How to fix Supabase connection failures?",
+    "Why is a Supabase connection slow?",
+    "What is the pricing model for Supabase?"
   ]
 }}
 </example>
