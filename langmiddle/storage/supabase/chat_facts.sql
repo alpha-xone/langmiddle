@@ -400,6 +400,7 @@ begin
 
   -- Create indexes for efficient queries
   execute format('create index %I on public.%I (fact_id)', v_table_name || '_fact_id_idx', v_table_name);
+  execute format('create index %I on public.%I (user_id, fact_id)', v_table_name || '_user_fact_idx', v_table_name);
   execute format('create index %I on public.%I (fact_type)', v_table_name || '_fact_type_idx', v_table_name);
   execute format('create index %I on public.%I (created_at desc)', v_table_name || '_created_at_idx', v_table_name);
   execute format('create index %I on public.%I (occurred_at desc)', v_table_name || '_occurred_at_idx', v_table_name);
