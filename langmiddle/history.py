@@ -132,8 +132,8 @@ class ToolRemover(AgentMiddleware[AgentState, ContextT]):
         if self.when not in ("before", "both"):
             return None
 
-        messages: list[Any] = state.get("messages", [])
-        new_messages: list[Any] = filter_tool_messages(messages)
+        messages: list[AnyMessage] = state.get("messages", [])
+        new_messages: list[AnyMessage] = filter_tool_messages(messages)
 
         # Only return update if we have messages to remove
         cnt_diff: int = len(messages) - len(new_messages)
@@ -166,8 +166,8 @@ class ToolRemover(AgentMiddleware[AgentState, ContextT]):
         if self.when not in ("after", "both"):
             return None
 
-        messages: list[Any] = state.get("messages", [])
-        new_messages: list[Any] = filter_tool_messages(messages)
+        messages: list[AnyMessage] = state.get("messages", [])
+        new_messages: list[AnyMessage] = filter_tool_messages(messages)
 
         # Only return update if we have messages to remove
         cnt_diff: int = len(messages) - len(new_messages)
