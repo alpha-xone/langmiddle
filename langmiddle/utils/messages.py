@@ -6,7 +6,7 @@ different middleware components.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections import defaultdict
 from typing import Any
 
 from langchain.embeddings import Embeddings, init_embeddings
@@ -123,11 +123,11 @@ def is_tool_message(msg: AnyMessage | dict) -> bool:
     return False
 
 
-def filter_tool_messages(messages: Sequence[AnyMessage | dict]) -> list[AnyMessage | dict]:
+def filter_tool_messages(messages: list[AnyMessage]) -> list[AnyMessage]:
     """Filter out tool messages from a message list.
 
     Args:
-        messages: List of messages (either AnyMessage or dicts) to filter.
+        messages: List of messages (AnyMessage) to filter.
 
     Returns:
         List of messages excluding tool-related messages.
@@ -152,29 +152,52 @@ def filter_tool_messages(messages: Sequence[AnyMessage | dict]) -> list[AnyMessa
 
 
 def split_messages(
-    messages: Sequence[AnyMessage | dict],
-    by_tag: str,
-) -> tuple[list[AnyMessage | dict], list[AnyMessage | dict]]:
+    messages: list[AnyMessage],
+    by_tags: list[str],
+) -> dict[str, list[AnyMessage]]:
     """Split messages by checking additional_kwargs into tagged and regular messages.
 
     Args:
         messages: List of messages (either AnyMessage or dicts) to split.
-        by_tag: The additional_kwargs tag key to use for splitting.
+        by_tags: The additional_kwargs tag keys to use for splitting.
 
     Returns:
-        A tuple containing two lists:
-        - List of tagged messages
-        - List of untagged messages
+        Dict with keys as tags and values as lists of messages.
     """
-    tagged_msgs, other_msgs = [], []
+    tagged_msgs = defaultdict(list)
     for msg in messages:
-        if isinstance(msg, dict):
-            additional_kwargs = msg.get("additional_kwargs", {})
+        additional_kwargs = getattr(msg, "additional_kwargs", {})
+        if any(additional_kwargs.get(tag) for tag in by_tags):
+            for tag in by_tags:
+                if additional_kwargs.get(tag):
+                    tagged_msgs[tag].append(msg)
         else:
-            additional_kwargs = getattr(msg, "additional_kwargs", {})
-        if additional_kwargs.get(by_tag):
-            tagged_msgs.append(msg)
-        else:
-            other_msgs.append(msg)
+            tagged_msgs["default"].append(msg)
 
-    return tagged_msgs, other_msgs
+    return tagged_msgs
+
+
+def message_string_contents(msg: AnyMessage | dict) -> list[str]:
+    """Get the content of a message.
+
+    Args:
+        msg: Message to get content from. Can be either:
+            - A LangChain message object (AnyMessage)
+            - A dictionary with 'content' key
+
+    Returns:
+        The content string of the message.
+    """
+    if isinstance(msg, dict):
+        return [msg.get("content", "")]
+
+    if isinstance(msg.content, str):
+        return [msg.content]
+
+    if isinstance(msg.content, list):
+        block_strings: list[str] = [block for block in msg.content if isinstance(block, str)]
+        if block_strings:
+            return block_strings
+
+    # Return empty list if content is neither str nor list of strings
+    return []
