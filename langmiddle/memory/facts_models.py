@@ -64,3 +64,8 @@ class AtomicQueries(BaseModel):
 class CuesResponse(BaseModel):
     """Response model for generated cues."""
     cues: list[str] = Field(description="List of retrieval cue questions")
+
+
+class MessagesSummary(BaseModel):
+    """Model to represent a summary of messages."""
+    summary: str = Field(..., description="Concise summary of the provided messages.")
