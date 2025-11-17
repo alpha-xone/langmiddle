@@ -16,7 +16,7 @@ across multiple conversation sessions.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -46,6 +46,7 @@ from .memory.facts_manager import (
     extract_facts,
     formatted_facts,
     get_actions,
+    messages_summary,
     query_existing_facts,
 )
 from .memory.facts_models import ExtractedFacts, FactsActions
@@ -57,7 +58,7 @@ from .memory.facts_prompts import (
 )
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
-from .utils.messages import split_messages
+from .utils.messages import message_string_contents, split_messages
 from .utils.runtime import auth_storage, get_user_id
 
 
@@ -100,6 +101,9 @@ class SummarizationConfig:
 
     prompt: str = DEFAULT_SUMMARY_PROMPT
     """Prompt template for generating summaries."""
+
+    prefix: str = "## Previous Conversation Summary\n"
+    """Prefix to add before the summary content."""
 
 
 @dataclass
@@ -153,6 +157,150 @@ logger._logger.propagate = False
 CONTEXT_TAG = "langmiddle/context"
 SUMMARY_TAG = "langmiddle/summary"
 LOGS_KEY = "langmiddle:context:trace"
+
+
+def _validate_storage_and_auth(
+    storage: Any,
+    runtime: Runtime[Any],
+    backend: str,
+) -> tuple[str | None, dict[str, Any] | None, str | None]:
+    """Validate storage initialization and authenticate user.
+
+    Args:
+        storage: Storage backend instance
+        runtime: Runtime context
+        backend: Backend type name
+
+    Returns:
+        Tuple of (user_id, credentials, error_message)
+        If successful: (user_id, credentials, None)
+        If failed: (None, None, error_message)
+    """
+    if storage is None:
+        return None, None, "Storage not initialized"
+
+    # Get user ID
+    user_id = get_user_id(
+        runtime=runtime,
+        backend=backend,
+        storage_backend=storage.backend,
+    )
+    if not user_id:
+        return None, None, "Missing user_id in context"
+
+    # Authenticate and get credentials
+    auth_status = auth_storage(
+        runtime=runtime,
+        backend=backend,
+        storage_backend=storage.backend,
+    )
+    if "error" in auth_status:
+        return None, None, f"Authentication failed: {auth_status['error']}"
+
+    credentials = auth_status.get("credentials", {})
+    return user_id, credentials, None
+
+
+def _query_facts_with_validation(
+    storage: Any,
+    embedder: Embeddings | None,
+    model: BaseChatModel | None,
+    credentials: dict[str, Any],
+    query_type: str,
+    *,
+    filter_namespaces: list[list[str]] | None = None,
+    match_count: int | None = None,
+    user_queries: list[str] | None = None,
+    existing_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Query facts from storage with validation.
+
+    Args:
+        storage: Storage backend instance
+        embedder: Embeddings model for query encoding
+        model: LLM model for query breaking
+        credentials: Authentication credentials
+        query_type: Type of query ('core' or 'context')
+        filter_namespaces: Namespace filters for core facts
+        match_count: Maximum number of facts to return
+        user_queries: User queries for context-specific facts
+        existing_ids: IDs to exclude from results
+
+    Returns:
+        List of fact dictionaries
+    """
+    # Validation
+    if storage is None:
+        logger.warning("Storage not initialized; cannot query facts")
+        return []
+
+    try:
+        if query_type == "core":
+            # Query core facts by namespace
+            if filter_namespaces is None:
+                logger.warning("No filter_namespaces provided for core facts query")
+                return []
+
+            facts = storage.backend.query_facts(
+                credentials=credentials,
+                filter_namespaces=filter_namespaces,
+                match_count=match_count or 30,
+            )
+            logger.debug(f"Loaded {len(facts)} core facts")
+            return facts
+
+        elif query_type == "context":
+            # Query context-specific facts using embeddings
+            if embedder is None or model is None:
+                logger.warning("Embedder or model not initialized; cannot query context facts")
+                return []
+
+            if not user_queries:
+                logger.debug("No user queries provided for context facts")
+                return []
+
+            existing_ids = existing_ids or []
+            all_facts = []
+
+            # Break each query into atomic queries for better matching
+            all_atomic_queries: list[str] = []
+            for user_query in user_queries:
+                atomic_queries = break_query_into_atomic(
+                    model=model,
+                    user_query=user_query,
+                )
+                all_atomic_queries.extend(atomic_queries)
+                logger.debug(f"Query '{user_query[:50]}...' broke into {len(atomic_queries)} atomic queries")
+
+            # Query facts using atomic queries
+            for atomic_query in all_atomic_queries:
+                try:
+                    query_embedding = embedder.embed_query(atomic_query)
+                    facts = storage.backend.query_facts(
+                        credentials=credentials,
+                        query_embedding=query_embedding,
+                        match_count=match_count,
+                    )
+
+                    # Add facts that aren't already present
+                    for fact in facts:
+                        if fact.get("content") and fact.get("id") and fact["id"] not in existing_ids:
+                            all_facts.append(fact)
+                            existing_ids.append(fact["id"])
+                except Exception as e:
+                    logger.error(f"Error querying facts for atomic query '{atomic_query[:50]}...': {e}")
+                    continue
+
+            logger.debug(f"Loaded {len(all_facts)} context-specific facts")
+            return all_facts
+
+        else:
+            logger.error(f"Invalid query_type: {query_type}")
+            return []
+
+    except Exception as e:
+        logger.error(f"Error querying {query_type} facts: {e}")
+        return []
 
 
 class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
@@ -426,22 +574,11 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         if self._summarization_config.max_tokens is None:
             return False
 
-        # Count tokens excluding tagged messages (context, old summaries)
-        conversation_messages = [
-            msg for msg in messages
-            if not msg.additional_kwargs.get(CONTEXT_TAG) and
-            not msg.additional_kwargs.get(SUMMARY_TAG)
-        ]
-
-        if not conversation_messages:
+        if not messages:
             return False
 
-        total_tokens = self.token_counter(conversation_messages)
+        total_tokens = self.token_counter(messages)
         return total_tokens >= self._summarization_config.max_tokens
-
-    def _summarization_should_run(self, messages: list[AnyMessage]) -> bool:
-        """Alias for _should_summarize for consistent naming."""
-        return self._should_summarize(messages)
 
     # === Extraction Operations ===
 
@@ -451,7 +588,6 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         Implements smart extraction triggers:
         1. Interval-based: Extract every N turns (default: every 3 completions)
         2. Token-based: Extract when recent messages exceed threshold
-        3. Summary filtering: Skip extraction from summary-tagged messages
 
         Args:
             messages: List of conversation messages.
@@ -459,13 +595,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         Returns:
             True if extraction should run, False otherwise.
         """
-        # Filter out summary messages - never extract facts from summaries
-        non_summary_messages = [
-            msg for msg in messages
-            if not msg.additional_kwargs.get(SUMMARY_TAG)
-        ]
-
-        if not non_summary_messages:
+        if not messages:
             return False
 
         # Strategy 1: Interval-based extraction (default mode)
@@ -478,24 +608,24 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         # Strategy 2: Token-based extraction (fallback)
         # Extract if recent messages have significant content
         if self._extraction_config.max_tokens is not None:
-            recent_tokens = self.token_counter(non_summary_messages[-10:])
+            recent_tokens = self.token_counter(messages)
             if recent_tokens >= self._extraction_config.max_tokens:
                 logger.debug(f"Extraction triggered by token threshold ({recent_tokens} tokens)")
                 return True
 
         return False
 
-    def _extraction_should_run(self, messages: list[AnyMessage]) -> bool:
-        """Alias for _should_extract for consistent naming."""
-        return self._should_extract(messages)
-
     # === Context Operations ===
 
-    def _summarize_conversation(self, messages: Sequence[AnyMessage | dict]) -> str | None:
+    def _summarize_conversation(
+        self,
+        messages: list[AnyMessage],
+        prev_summary: str = "",
+    ) -> str | None:
         """Generate a summary of conversation messages.
 
         Args:
-            messages: Sequence of messages to summarize.
+            messages: list of messages to summarize.
 
         Returns:
             Summary text, or None if summarization fails.
@@ -504,31 +634,23 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             return None
 
         try:
-            # Format messages for the summary prompt
-            formatted_messages = "\n".join([
-                f"{getattr(msg, 'type', 'message')}: {getattr(msg, 'content', str(msg))}"
-                if hasattr(msg, 'type') else str(msg)
-                for msg in messages
-            ])
-
-            response = self.model.invoke(
-                self._summarization_config.prompt.format(messages=formatted_messages)
+            return messages_summary(
+                model=self.model,
+                messages=messages,
+                prev_summary=prev_summary,
+                summary_prompt=self._summarization_config.prompt,
             )
-            summary = str(response.content).strip()
-            logger.info(f"Generated summary of {len(messages)} messages")
-            return summary
-
         except Exception as e:
             logger.error(f"Failed to generate summary: {e}")
             return None
 
     # === Fact Extraction Operations ===
 
-    def _extract_facts(self, messages: Sequence[AnyMessage | dict]) -> list[dict] | None:
+    def _extract_facts(self, messages: list[AnyMessage]) -> list[dict] | None:
         """Extract facts from conversation messages.
 
         Args:
-            messages: Sequence of conversation messages.
+            messages: list of conversation messages.
 
         Returns:
             List of extracted facts as dictionaries, or None on failure.
@@ -702,28 +824,16 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             logger.debug("No extractable messages after filtering summaries")
             return None
 
-        # Extract context information
-        user_id: str | None = get_user_id(
+        # Validate storage and authenticate
+        user_id, credentials, error_msg = _validate_storage_and_auth(
+            storage=self.storage,
             runtime=runtime,
             backend=self.backend,
-            storage_backend=self.storage.backend,
         )
-        if not user_id:
-            logger.error("Missing user_id in context; cannot extract facts")
-            return {LOGS_KEY: ["ERROR: Missing user_id"]}
+        if error_msg or user_id is None or credentials is None:
+            logger.error(f"Validation failed: {error_msg}")
+            return {LOGS_KEY: [f"ERROR: {error_msg}"]}
 
-        # Prepare credentials and authenticate for storage backend
-        auth_status: dict[str, Any] = auth_storage(
-            runtime=runtime,
-            backend=self.backend,
-            storage_backend=self.storage.backend,
-        )
-        if "error" in auth_status:
-            error_msg = auth_status["error"]
-            logger.error(f"Authentication failed: {error_msg}")
-            return {LOGS_KEY: [f"ERROR: Authentication failed - {error_msg}"]}
-
-        credentials: dict[str, Any] = auth_status.get("credentials", {})
         trace_logs = []
         self._state.extraction_count += 1
 
@@ -831,7 +941,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         conversation summarization when token limits are approached.
 
         Message structure after processing:
-        1. SystemMessage [langmiddle/context] - Core facts (cached)
+        1. SystemMessage [langmiddle/context] - Core + context facts (cached)
         2. HumanMessage [langmiddle/summary] - Summary of old messages (if needed)
         3. Recent messages (last 50% after summarization)
 
@@ -843,171 +953,156 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             Dict with modified messages and optional trace logs, or None
         """
         # Read always loaded namespaces from storage
-        messages = state.get("messages", [])
+        messages: list[AnyMessage] = state.get("messages", [])
         if not messages:
             return None
 
-        if self.storage is None:
-            return None
-
-        # Extract context information
-        user_id: str | None = get_user_id(
-            runtime=runtime,
-            backend=self.backend,
-            storage_backend=self.storage.backend,
-        )
-        if not user_id:
-            logger.error("Missing user_id in context; cannot load facts")
-            return None
-
-        # Prepare credentials and authenticate for storage backend
-        auth_status: dict[str, Any] = auth_storage(
-            runtime=runtime,
-            backend=self.backend,
-            storage_backend=self.storage.backend,
-        )
-        if "error" in auth_status:
-            logger.error(f"Authentication failed: {auth_status['error']}")
-            return None
-
-        credentials: dict[str, Any] = auth_status.get("credentials", {})
-        trace_logs = []
-
         try:
-            # Step 1: Check if summarization is needed
-            should_summarize = self._should_summarize(messages)
-            summary_text = None
-            conv_messages = messages
-
-            if should_summarize:
-                # Split out context messages (don't summarize these)
-                context_msgs, conv_msgs = split_messages(messages, by_tag=CONTEXT_TAG)
-
-                # Further filter out old summaries
-                filtered_msgs = []
-                for msg in conv_msgs:
-                    if isinstance(msg, dict):
-                        additional_kwargs = msg.get("additional_kwargs", {})
-                    else:
-                        additional_kwargs = getattr(msg, "additional_kwargs", {})
-                    if not additional_kwargs.get(SUMMARY_TAG):
-                        filtered_msgs.append(msg)
-                conv_msgs = filtered_msgs
-
-                # Calculate split point (keep recent 50%)
-                if len(conv_msgs) > 2:
-                    keep_count = len(conv_msgs) // 2
-                    msgs_to_summarize = conv_msgs[:-keep_count]
-                    conv_messages = conv_msgs[-keep_count:]
-
-                    # Generate summary
-                    summary_text = self._summarize_conversation(msgs_to_summarize)
-                    if summary_text:
-                        trace_logs.append(f"Summarized {len(msgs_to_summarize)} messages")
-                        logger.info(f"Summarized {len(msgs_to_summarize)} messages, keeping {keep_count} recent")
-            else:
-                # No summarization - split messages normally
-                context_messages, conv_messages = split_messages(messages, by_tag=CONTEXT_TAG)
-
-            # Load core memories (cached after first load)
-            if not self._state.core_facts:
-                self._state.core_facts = self.storage.backend.query_facts(
-                    credentials=credentials,
-                    filter_namespaces=self._context_config.core_namespaces,
-                    match_count=30,
-                )
-                if self._state.core_facts:
-                    logger.debug(f"Loaded {len(self._state.core_facts)} core facts")
-
-            curr_ids = [fact["id"] for fact in self._state.core_facts + self._state.current_facts if fact.get("id")]
-
-            # Load context-specific memories using atomic query breaking
-            if self.embedder is not None and self.model is not None:
-                # Extract user queries from last message
-                user_queries: list[str] = []
-                if isinstance(messages[-1].content, str):
-                    user_queries.append(messages[-1].content)
-                if isinstance(messages[-1].content, list):
-                    for block in messages[-1].content:
-                        if isinstance(block, str):
-                            user_queries.append(block)
-
-                # Break each query into atomic queries for better matching
-                all_atomic_queries: list[str] = []
-                for user_query in user_queries:
-                    atomic_queries = break_query_into_atomic(
-                        model=self.model,
-                        user_query=user_query,
-                    )
-                    all_atomic_queries.extend(atomic_queries)
-                    logger.debug(f"Query '{user_query[:50]}...' broke into {len(atomic_queries)} atomic queries")
-
-                # Query facts using atomic queries
-                for atomic_query in all_atomic_queries:
-                    try:
-                        query_embedding = self.embedder.embed_query(atomic_query)
-                        facts = self.storage.backend.query_facts(
-                            credentials=credentials,
-                            query_embedding=query_embedding,
-                        )
-
-                        # Add facts that aren't already present
-                        for fact in facts:
-                            if fact.get("content") and fact.get("id") and fact["id"] not in curr_ids:
-                                self._state.current_facts.append(fact)
-                                curr_ids.append(fact["id"])
-                    except Exception as e:
-                        logger.error(f"Error querying facts for atomic query '{atomic_query[:50]}...': {e}")
-                        continue
-
-            # Step 2: Build context message with core + current facts
-            context_parts = []
-
-            if self._state.core_facts:
-                context_parts.append(self._context_config.core_prompt.format(basic_info=formatted_facts(self._state.core_facts)))
-
-            if self._state.current_facts:
-                logger.debug(f"Applying {len(self._state.current_facts)} context-specific facts")
-                context_parts.append(self._context_config.memory_prompt.format(facts=formatted_facts(self._state.current_facts)))            # Step 3: Build final message queue
-            result_messages: list[Any] = [RemoveMessage(id=REMOVE_ALL_MESSAGES)]
-
-            # Add context message (core + current facts) if we have any
-            if context_parts:
-                combined_content = "\n\n".join(context_parts)
-                result_messages.append(
-                    SystemMessage(
-                        content=combined_content,
-                        additional_kwargs={CONTEXT_TAG: True},
-                    )
-                )
-
-            # Add summary message if generated
-            if summary_text:
-                result_messages.append(
-                    HumanMessage(
-                        content=f"## Previous Conversation Summary\n{summary_text}",
-                        additional_kwargs={SUMMARY_TAG: True},
-                    )
-                )
-
-            # Add conversation messages (recent only if summarized, all otherwise)
-            result_messages.extend(conv_messages)
-
-            # Log summary of operations
-            total_core = len(self._state.core_facts)
-            total_context = len(self._state.current_facts)
-            if total_core > 0 or total_context > 0:
-                summary = f"Injected {total_core} core + {total_context} context facts"
-                trace_logs.append(summary)
-                logger.info(summary)
-
-            result = {"messages": result_messages}
-
-            if trace_logs:
-                result[LOGS_KEY] = trace_logs
-
-            return result
-
+            # Split messages by context, summary and regular messages
+            split_msgs: dict[str, list[AnyMessage]] = split_messages(messages, by_tags=[CONTEXT_TAG, SUMMARY_TAG])
+            conversation_msgs: list[AnyMessage] = split_msgs.get("default", [])
+            context_msgs: list[AnyMessage] = split_msgs.get(CONTEXT_TAG, [])
+            summary_msgs: list[AnyMessage] = split_msgs.get(SUMMARY_TAG, [])
+            logger.debug(f"Split messages into {len(context_msgs)} context, {len(summary_msgs)} summary, and {len(conversation_msgs)} conversation messages")
         except Exception as e:
-            logger.error(f"Error during context injection: {e}")
+            logger.error(f"Error splitting messages into context, summary, and conversation messages: {e}")
             return None
+
+        if not conversation_msgs:
+            logger.debug("No conversation messages found")
+            return None
+
+        trace_logs = []
+        is_summarized = False
+
+        # =======================================================
+        # Step 1. Summarization
+        # =======================================================
+        try:
+            prev_summary: str = "\n\n".join([
+                "\n".join(message_string_contents(msg)).lstrip(self.summarization_config.prefix)
+                for msg in summary_msgs
+            ]).strip()
+            if self._should_summarize(conversation_msgs):
+                summary_text: str | None = self._summarize_conversation(
+                    messages=conversation_msgs,
+                    prev_summary=prev_summary,
+                )
+                if summary_text:
+                    summary_text = f'{self.summarization_config.prefix}{summary_text}'.strip()
+                    if len(summary_msgs) > 0:
+                        logger.debug("Updating existing summary message")
+                        summary_msgs[0].content = summary_text
+                        summary_msgs = summary_msgs[:1]  # Keep only one summary message
+                    else:
+                        logger.debug("Creating new summary message")
+                        summary_msgs.insert(0, HumanMessage(content=summary_text, tags=[SUMMARY_TAG]))
+                    logger.info("Conversation summarized")
+                    is_summarized = True
+        except Exception as e:
+            logger.error(f"Error during summarization: {e}")
+
+        # =======================================================
+        # Step 2. Load Facts (Semantic Memories)
+        # =======================================================
+
+        # Validate storage and authenticate
+        user_id, credentials, error_msg = _validate_storage_and_auth(
+            storage=self.storage,
+            runtime=runtime,
+            backend=self.backend,
+        )
+
+        if error_msg or user_id is None or credentials is None:
+            logger.error(f"Validation failed: {error_msg}")
+            trace_logs.append(f"ERROR: {error_msg}")
+
+        else:
+            try:
+                # Load core memories (cached after first load)
+                if not self._state.core_facts:
+                    self._state.core_facts = _query_facts_with_validation(
+                        storage=self.storage,
+                        embedder=self.embedder,
+                        model=self.model,
+                        credentials=credentials,
+                        query_type="core",
+                        filter_namespaces=self._context_config.core_namespaces,
+                        match_count=20,
+                    )
+
+                curr_ids = [fact["id"] for fact in self._state.core_facts + self._state.current_facts if fact.get("id")]
+
+                # Load context-specific memories using atomic query breaking
+                user_queries: list[str] = message_string_contents(messages[-1])
+                context_facts = _query_facts_with_validation(
+                    storage=self.storage,
+                    embedder=self.embedder,
+                    model=self.model,
+                    credentials=credentials,
+                    query_type="context",
+                    user_queries=user_queries,
+                    existing_ids=curr_ids,
+                )
+                self._state.current_facts.extend(context_facts)
+
+                # Build context message with core + current facts
+                context_parts = []
+
+                if self._state.core_facts:
+                    context_parts.append(self._context_config.core_prompt.format(basic_info=formatted_facts(self._state.core_facts)))
+
+                if self._state.current_facts:
+                    logger.debug(f"Applying {len(self._state.current_facts)} context-specific facts")
+                    context_parts.append(self._context_config.memory_prompt.format(facts=formatted_facts(self._state.current_facts)))
+
+                # Handle context message
+                if context_parts:
+                    combined_content = "\n\n".join(context_parts)
+
+                    if len(context_msgs) > 0:
+                        logger.debug("Updating existing context message")
+                        context_msgs[0].content = combined_content
+                        context_msgs = context_msgs[:1]  # Keep only one context message
+                    else:
+                        logger.debug("Creating new context message")
+                        context_msgs.insert(0, SystemMessage(content=combined_content, tags=[CONTEXT_TAG]))
+                    trace_logs.append("Updated context message")
+
+                # Log summary of operations
+                total_core = len(self._state.core_facts)
+                total_context = len(self._state.current_facts)
+                if total_core > 0 or total_context > 0:
+                    summary = f"Injected {total_core} core + {total_context} context facts"
+                    trace_logs.append(summary)
+                    logger.info(summary)
+
+            except Exception as e:
+                logger.error(f"Error during context injection: {e}")
+                return None
+
+        cutoff_idx = 0
+        if is_summarized:
+            cutoff_idx = len(conversation_msgs) // 2
+            # Maek sure human message was kept close to half of the regular messages
+            for idx in range(cutoff_idx, len(conversation_msgs)):
+                if isinstance(conversation_msgs[idx], HumanMessage):
+                    cutoff_idx = idx
+                    break
+            if cutoff_idx >= len(conversation_msgs) - 1:  # No human message found, look backwards
+                for idx in range(cutoff_idx, 0, -1):
+                    if isinstance(conversation_msgs[idx], HumanMessage):
+                        cutoff_idx = idx + 1
+                        break
+
+        result = {"messages": [
+            RemoveMessage(id=REMOVE_ALL_MESSAGES),
+            *context_msgs,
+            *summary_msgs,
+            *conversation_msgs[cutoff_idx:],
+        ]}
+
+        if trace_logs:
+            result[LOGS_KEY] = trace_logs
+
+        return result
