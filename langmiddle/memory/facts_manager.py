@@ -1,25 +1,28 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from langchain.agents.middleware.summarization import DEFAULT_SUMMARY_PROMPT
 from langchain.chat_models import BaseChatModel
 from langchain.embeddings import Embeddings
-from langchain_core.messages import AnyMessage
+from langchain_core.messages import AnyMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 
 from ..utils.logging import get_graph_logger
-from ..utils.messages import filter_tool_messages
+from ..utils.messages import is_tool_message
 from .facts_models import (
     AtomicQueries,
     CuesResponse,
     CurrentFacts,
     ExtractedFacts,
     FactsActions,
+    MessagesSummary,
 )
 from .facts_prompts import (
     DEFAULT_CUES_PRODUCER,
     DEFAULT_FACTS_EXTRACTOR,
     DEFAULT_FACTS_UPDATER,
+    DEFAULT_PREV_SUMMARY,
     DEFAULT_QUERY_BREAKER,
 )
 
@@ -96,6 +99,42 @@ def _invoke_structured_model(
     except Exception as e:
         logger.error(f"[{function_name}] Error invoking model: {e}")
         return fallback_value
+
+
+def messages_summary(
+    model: Runnable,
+    messages: list[AnyMessage],
+    prev_summary: str = "",
+    *,
+    summary_prompt: str = DEFAULT_SUMMARY_PROMPT,
+) -> str | None:
+    """Summarize a list of messages"""
+    if not messages:
+        return None
+
+    if not isinstance(model, Runnable):
+        logger.error("[messages_summary] Model is not a Runnable")
+        return None
+
+    input_msgs = [HumanMessage(content=DEFAULT_PREV_SUMMARY.format(prev_summary=prev_summary))] if prev_summary else []
+
+    result = _invoke_structured_model(
+        model=model,
+        prompt_template=summary_prompt,
+        input_vars={"messages": input_msgs + messages},
+        expected_type=MessagesSummary,
+        function_name="messages_summary",
+        fallback_value=None,
+    )
+
+    if result is None:
+        return None
+
+    if not result.summary or not result.summary.strip():
+        logger.warning("[messages_summary] Generated empty summary")
+        return None
+
+    return result.summary
 
 
 def formatted_facts(facts: list[dict]) -> str:
@@ -199,7 +238,7 @@ def extract_facts(
         extraction_prompt: Prompt template for extraction
         messages: Messages to extract facts from
     """
-    filtered_messages = filter_tool_messages(messages)
+    filtered_messages = [msg for msg in messages if not is_tool_message(msg)]
     if not filtered_messages:
         logger.debug("[extract_facts] No messages to process after filtering tool messages")
         return None

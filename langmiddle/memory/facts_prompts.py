@@ -415,3 +415,11 @@ Example 2 (Resolving Pronouns & Implicit Intent)
 {user_query}
 </user_query>
 """
+
+
+DEFAULT_PREV_SUMMARY = """
+<previous_summary>
+Below is the summary of previous conversations (it may have overlaps with the current conversation):
+
+{prev_summary}
+</previous_summary>"""
