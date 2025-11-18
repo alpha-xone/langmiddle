@@ -572,7 +572,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         if self._summarization_config.max_tokens is None:
             return False
 
-        if not messages:
+        if len(messages) <= 1:
             return False
 
         # Skip if all messages have already been summarized
@@ -652,6 +652,53 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             return None
 
     # === Fact Extraction Operations ===
+
+    def _prepare_fact_embeddings(
+        self,
+        facts: list[dict],
+    ) -> tuple[list[list[float]], int] | tuple[None, None]:
+        """Prepare and validate embeddings for a list of facts.
+
+        Args:
+            facts: List of fact dictionaries with 'content' field
+
+        Returns:
+            Tuple of (embeddings_list, model_dimension) on success, (None, None) on failure
+        """
+        if self.embedder is None:
+            logger.error("Embedder not initialized for embedding generation")
+            return None, None
+
+        contents = [f["content"] for f in facts if f.get("content")]
+        if not contents:
+            logger.warning("No valid content found in facts for embedding")
+            return None, None
+
+        try:
+            embeddings = self.embedder.embed_documents(contents)
+
+            # Validate embeddings
+            if not embeddings or not all(embeddings):
+                logger.error("Failed to generate embeddings: empty or None results")
+                return None, None
+
+            # Ensure consistent dimensions
+            embedding_dims = [len(emb) for emb in embeddings if emb]
+            if not embedding_dims:
+                logger.error("No valid embeddings generated")
+                return None, None
+
+            if len(set(embedding_dims)) > 1:
+                logger.error(f"Inconsistent embedding dimensions: {set(embedding_dims)}")
+                return None, None
+
+            model_dimension = embedding_dims[0]
+            logger.debug(f"Generated {len(embeddings)} embeddings (dimension: {model_dimension})")
+            return embeddings, model_dimension
+
+        except Exception as e:
+            logger.error(f"Error generating embeddings: {e}")
+            return None, None
 
     def _extract_facts(self, messages: list[AnyMessage]) -> list[dict] | None:
         """Extract facts from conversation messages.
@@ -751,6 +798,48 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             logger.error(f"Error determining facts actions: {e}")
             return None
 
+    def _calculate_message_cutoff(
+        self,
+        messages: list[AnyMessage],
+        target_ratio: float = 0.5,
+    ) -> int:
+        """Calculate the cutoff index to keep a ratio of recent messages.
+
+        Ensures the cutoff lands on or after a HumanMessage for context coherence.
+
+        Args:
+            messages: List of conversation messages
+            target_ratio: Ratio of messages to keep (0.5 = keep last 50%)
+
+        Returns:
+            Index from which to keep messages (0 = keep all)
+        """
+        if not messages or target_ratio >= 1.0:
+            return 0
+
+        cutoff_idx = int(len(messages) * (1.0 - target_ratio))
+
+        # Find nearest HumanMessage at or after cutoff
+        for idx in range(cutoff_idx, len(messages)):
+            if isinstance(messages[idx], HumanMessage):
+                logger.debug(
+                    f"Cutoff at index {idx}/{len(messages)} "
+                    f"(keeping {len(messages) - idx} messages, {target_ratio:.0%} target)"
+                )
+                return idx
+
+        # No human message found forward, search backward
+        for idx in range(cutoff_idx, 0, -1):
+            if isinstance(messages[idx], HumanMessage):
+                logger.debug(
+                    f"Cutoff at index {idx + 1}/{len(messages)} "
+                    f"(keeping {len(messages) - idx - 1} messages after backward search)"
+                )
+                return idx + 1
+
+        logger.debug(f"No suitable cutoff found; keeping all {len(messages)} messages")
+        return 0
+
     def _apply_actions(
         self,
         actions: list[dict],
@@ -843,59 +932,53 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
 
         trace_logs = []
         self._state.extraction_count += 1
+        extraction_id = self._state.extraction_count
+
+        logger.info(
+            f"[Extraction #{extraction_id}] Starting fact extraction "
+            f"(user: {user_id[:8] if len(user_id) > 8 else user_id}..., "
+            f"messages: {len(extractable_messages)}/{len(messages)})"
+        )
 
         try:
             # Step 1: Extract facts from non-summary messages
-            logger.debug(f"Extracting facts from {len(extractable_messages)} messages (filtered {len(messages) - len(extractable_messages)} summaries)")
+            logger.debug(
+                f"[Extraction #{extraction_id}] Processing {len(extractable_messages)} extractable messages "
+                f"(filtered {len(messages) - len(extractable_messages)} summary messages)"
+            )
             new_facts = self._extract_facts(extractable_messages)
 
             if not new_facts:
-                logger.debug("No facts extracted from conversation")
+                logger.debug(f"[Extraction #{extraction_id}] No facts extracted; skipping")
                 return None
 
             trace_logs.append(f"Extracted {len(new_facts)} new facts")
-            logger.info(f"Extracted {len(new_facts)} facts")
+            logger.info(f"[Extraction #{extraction_id}] Extracted {len(new_facts)} facts")
 
             # Step 2: Query existing facts
+            logger.debug(f"[Extraction #{extraction_id}] Querying storage for related existing facts")
             existing_facts = self._query_existing_facts(new_facts, user_id, credentials)
             if existing_facts:
-                logger.debug(f"Found {len(existing_facts)} existing related facts")
+                logger.debug(
+                    f"[Extraction #{extraction_id}] Found {len(existing_facts)} existing facts "
+                    f"for comparison"
+                )
 
             # Step 3: Determine actions
+            logger.debug(f"[Extraction #{extraction_id}] Determining actions (ADD/UPDATE/DELETE/NONE)")
             actions = self._determine_actions(new_facts, existing_facts)
 
             if not actions:
                 # If no actions determined, just insert new facts
-                contents = [f["content"] for f in new_facts if f.get("content")]
+                logger.debug("No actions determined by LLM; inserting new facts directly")
+                embeddings, model_dimension = self._prepare_fact_embeddings(new_facts)
 
-                if not contents:
-                    logger.warning("No valid content in new facts to insert")
-                    return None
-
-                try:
-                    embeddings = self.embedder.embed_documents(contents)
-
-                    # Validate embeddings
-                    if not embeddings or not all(embeddings):
-                        logger.error("Failed to generate embeddings for facts")
-                        trace_logs.append("ERROR: Failed to generate embeddings")
-                        return {LOGS_KEY: trace_logs}
-
-                    # Ensure all embeddings have the same dimension
-                    embedding_dims = [len(emb) for emb in embeddings if emb]
-                    if not embedding_dims or len(set(embedding_dims)) > 1:
-                        dims_info = set(embedding_dims) if embedding_dims else 'empty'
-                        logger.error(f"Inconsistent embedding dimensions: {dims_info}")
-                        trace_logs.append(f"ERROR: Inconsistent embedding dimensions: {dims_info}")
-                        return {LOGS_KEY: trace_logs}
-
-                    model_dimension = embedding_dims[0]
-
-                except Exception as e:
-                    logger.error(f"Error generating embeddings: {e}")
-                    trace_logs.append(f"ERROR: Failed to generate embeddings - {e}")
+                if embeddings is None or model_dimension is None:
+                    error = "Failed to prepare embeddings for fact insertion"
+                    trace_logs.append(f"ERROR: {error}")
                     return {LOGS_KEY: trace_logs}
 
+                logger.debug(f"[Extraction #{extraction_id}] Inserting {len(new_facts)} facts to storage")
                 result = self.storage.backend.insert_facts(
                     credentials=credentials,
                     user_id=user_id,
@@ -907,14 +990,15 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                 inserted = result.get("inserted_count", 0)
                 if inserted > 0:
                     trace_logs.append(f"Inserted {inserted} facts")
-                    logger.info(f"Inserted {inserted} new facts")
+                    logger.info(f"[Extraction #{extraction_id}] Inserted {inserted}/{len(new_facts)} facts")
 
                 if result.get("errors"):
                     for error in result["errors"]:
                         trace_logs.append(f"ERROR: {error}")
-                        logger.error(f"Fact insertion error: {error}")
+                        logger.error(f"[Extraction #{extraction_id}] Insertion error: {error}")
             else:
                 # Step 4: Apply actions
+                logger.debug(f"[Extraction #{extraction_id}] Applying {len(actions)} actions to storage")
                 stats = self._apply_actions(actions, user_id, credentials)
 
                 # Log statistics for important operations
@@ -922,17 +1006,17 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                 if total_changes > 0:
                     summary = f"Facts: +{stats['added']} ~{stats['updated']} -{stats['deleted']}"
                     trace_logs.append(summary)
-                    logger.info(summary)
+                    logger.info(f"[Extraction #{extraction_id}] {summary}")
 
                 # Log errors
                 for error in stats.get("errors", []):
                     trace_logs.append(f"ERROR: {error}")
-                    logger.error(f"Fact management error: {error}")
+                    logger.error(f"[Extraction #{extraction_id}] Action error: {error}")
 
         except Exception as e:
-            error_msg = f"Unexpected error during fact extraction: {e}"
+            error_msg = f"Unexpected error during fact extraction: {type(e).__name__}: {e}"
             trace_logs.append(f"ERROR: {error_msg}")
-            logger.error(error_msg)
+            logger.error(f"[Extraction #{extraction_id}] {error_msg}")
 
         return {LOGS_KEY: trace_logs} if trace_logs else None
 
@@ -982,6 +1066,11 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         trace_logs = []
         is_summarized = False
 
+        logger.debug(
+            f"[Context Injection] Processing {len(messages)} total messages "
+            f"({len(conversation_msgs)} conversation, {len(context_msgs)} context, {len(summary_msgs)} summary)"
+        )
+
         # =======================================================
         # Step 1. Summarization
         # =======================================================
@@ -991,6 +1080,10 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                 for msg in summary_msgs
             ]).strip()
             if self._should_summarize(conversation_msgs):
+                logger.debug(
+                    f"[Context Injection] Summarization triggered "
+                    f"({self.token_counter(conversation_msgs)} tokens >= {self._summarization_config.max_tokens})"
+                )
                 summary_text: str | None = self._summarize_conversation(
                     messages=conversation_msgs,
                     prev_summary=prev_summary,
@@ -1001,10 +1094,14 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                         additional_kwargs={SUMMARY_TAG: True},
                         id=summary_msgs[0].id if len(summary_msgs) > 0 else None,
                     )]
-                    logger.info("Conversation summarized")
+                    logger.info(
+                        f"[Context Injection] Summarized {len(conversation_msgs)} messages "
+                        f"(summary length: {len(summary_text)} chars)"
+                    )
+                    trace_logs.append(f"Summarized {len(conversation_msgs)} messages")
                     is_summarized = True
         except Exception as e:
-            logger.error(f"Error during summarization: {e}")
+            logger.error(f"[Context Injection] Error during summarization: {e}")
 
         # =======================================================
         # Step 2. Load Facts (Semantic Memories)
@@ -1025,6 +1122,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             try:
                 # Load core memories (cached after first load)
                 if not self._state.core_facts:
+                    logger.debug("[Context Injection] Loading core facts (first time)")
                     self._state.core_facts = _query_facts_with_validation(
                         storage=self.storage,
                         embedder=self.embedder,
@@ -1034,11 +1132,18 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                         filter_namespaces=self._context_config.core_namespaces,
                         match_count=20,
                     )
+                    logger.debug(f"[Context Injection] Loaded {len(self._state.core_facts)} core facts")
+                else:
+                    logger.debug(f"[Context Injection] Using cached {len(self._state.core_facts)} core facts")
 
                 curr_ids = [fact["id"] for fact in self._state.core_facts + self._state.current_facts if fact.get("id")]
 
                 # Load context-specific memories using atomic query breaking
                 user_queries: list[str] = message_string_contents(messages[-1])
+                logger.debug(
+                    f"[Context Injection] Querying context-specific facts "
+                    f"({len(user_queries)} query fragments from last message)"
+                )
                 context_facts = _query_facts_with_validation(
                     storage=self.storage,
                     embedder=self.embedder,
@@ -1080,22 +1185,20 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                     logger.info(summary)
 
             except Exception as e:
-                logger.error(f"Error during context injection: {e}")
-                return None
+                logger.error(f"[Context Injection] Error loading facts: {type(e).__name__}: {e}")
+                trace_logs.append(f"ERROR: Failed to load facts - {e}")
+                # Continue without facts rather than failing completely
 
         cutoff_idx = 0
         if is_summarized:
-            cutoff_idx = len(conversation_msgs) // 2
-            # Maek sure human message was kept close to half of the regular messages
-            for idx in range(cutoff_idx, len(conversation_msgs)):
-                if isinstance(conversation_msgs[idx], HumanMessage):
-                    cutoff_idx = idx
-                    break
-            if cutoff_idx >= len(conversation_msgs) - 1:  # No human message found, look backwards
-                for idx in range(cutoff_idx, 0, -1):
-                    if isinstance(conversation_msgs[idx], HumanMessage):
-                        cutoff_idx = idx + 1
-                        break
+            cutoff_idx = self._calculate_message_cutoff(
+                conversation_msgs,
+                target_ratio=self._summarization_config.keep_ratio,
+            )
+            trace_logs.append(
+                f"Trimmed conversation to last {len(conversation_msgs) - cutoff_idx} vs {len(conversation_msgs)} messages "
+                f"({self._summarization_config.keep_ratio:.0%} keep ratio)"
+            )
 
         result = {"messages": [
             RemoveMessage(id=REMOVE_ALL_MESSAGES),
