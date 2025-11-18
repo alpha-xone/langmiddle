@@ -119,6 +119,21 @@ class ContextConfig:
     memory_prompt: str = DEFAULT_FACTS_INJECTOR
     """Prompt template for context-specific facts injection."""
 
+    max_context_tokens: int = 2000
+    """Maximum tokens to allocate for injected facts."""
+
+    relevance_threshold: float = 0.3
+    """Minimum relevance score for fact inclusion (0-1)."""
+
+    enable_adaptive_formatting: bool = True
+    """Enable adaptive formatting based on relevance scores."""
+
+    similarity_weight: float = 0.7
+    """Weight for embedding similarity in combined score (0-1)."""
+
+    relevance_weight: float = 0.3
+    """Weight for relevance score in combined score (0-1)."""
+
 
 @dataclass
 class _MiddlewareState:
@@ -145,10 +160,14 @@ class _MiddlewareState:
     summerized_msg_ids: set[str] = field(default_factory=set)
     """Set of message IDs that have been summerized."""
 
+    injected_fact_ids: list[str] = field(default_factory=list)
+    """Fact IDs injected in the last context injection (for usage tracking)."""
+
     def reset_session_state(self) -> None:
         """Reset per-session state while keeping caches."""
         self.turn_count = 0
         self.current_facts.clear()
+        self.injected_fact_ids.clear()
 
 
 load_dotenv()
@@ -215,8 +234,9 @@ def _query_facts_with_validation(
     match_count: int | None = None,
     user_queries: list[str] | None = None,
     existing_ids: list[str] | None = None,
+    relevance_threshold: float = 0.3,
 ) -> list[dict[str, Any]]:
-    """Query facts from storage with validation.
+    """Query facts from storage with validation and relevance scoring.
 
     Args:
         storage: Storage backend instance
@@ -228,9 +248,10 @@ def _query_facts_with_validation(
         match_count: Maximum number of facts to return
         user_queries: User queries for context-specific facts
         existing_ids: IDs to exclude from results
+        relevance_threshold: Minimum relevance score for inclusion
 
     Returns:
-        List of fact dictionaries
+        List of fact dictionaries sorted by combined relevance score
     """
     # Validation
     if storage is None:
@@ -249,7 +270,18 @@ def _query_facts_with_validation(
                 filter_namespaces=filter_namespaces,
                 match_count=match_count or 30,
             )
-            logger.debug(f"Loaded {len(facts)} core facts")
+
+            # Filter by relevance threshold if relevance_score is available
+            if relevance_threshold > 0:
+                facts = [
+                    fact for fact in facts
+                    if fact.get("relevance_score", 0.5) >= relevance_threshold
+                ]
+
+            # Sort by relevance score (descending) for core facts
+            facts.sort(key=lambda f: f.get("relevance_score", 0.5), reverse=True)
+
+            logger.debug(f"Loaded {len(facts)} core facts (filtered by relevance >= {relevance_threshold})")
             return facts
 
         elif query_type == "context":
@@ -285,16 +317,35 @@ def _query_facts_with_validation(
                         match_count=match_count,
                     )
 
-                    # Add facts that aren't already present
+                    # Add facts that aren't already present and meet relevance threshold
                     for fact in facts:
-                        if fact.get("content") and fact.get("id") and fact["id"] not in existing_ids:
+                        if (
+                            fact.get("content")
+                            and fact.get("id")
+                            and fact["id"] not in existing_ids
+                            and fact.get("relevance_score", 0.5) >= relevance_threshold
+                        ):
                             all_facts.append(fact)
                             existing_ids.append(fact["id"])
                 except Exception as e:
                     logger.error(f"Error querying facts for atomic query '{atomic_query[:50]}...': {e}")
                     continue
 
-            logger.debug(f"Loaded {len(all_facts)} context-specific facts")
+            # Sort by combined_score (similarity + relevance) if available
+            # Fallback to relevance_score, then similarity
+            all_facts.sort(
+                key=lambda f: (
+                    f.get("combined_score", 0.0),
+                    f.get("relevance_score", 0.5),
+                    f.get("similarity", 0.0),
+                ),
+                reverse=True,
+            )
+
+            logger.debug(
+                f"Loaded {len(all_facts)} context-specific facts "
+                f"(filtered by relevance >= {relevance_threshold}, sorted by combined score)"
+            )
             return all_facts
 
         else:
@@ -319,8 +370,8 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
     Implementation roadmap:
     - Phase 1: Memory extraction and storage vis supported backends
     - Phase 2: Context retrieval and injection into model requests
-    - Phase 3 (Current): Dynamic context formatting based on relevance scoring
-    - Phase 4: Multi-backend support (vector DB, custom storage adapters)
+    - Phase 3: Dynamic context formatting based on relevance scoring
+    - Phase 4 (Current): Multi-backend support (vector DB, custom storage adapters)
     - Phase 5: Advanced context optimization (token budgeting, semantic compression)
 
     Attributes:
@@ -1018,6 +1069,36 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             trace_logs.append(f"ERROR: {error_msg}")
             logger.error(f"[Extraction #{extraction_id}] {error_msg}")
 
+        # Step 5: Track fact usage feedback
+        # Check if previously injected facts were mentioned in the response
+        if self._state.injected_fact_ids and self.storage is not None:
+            try:
+                # Get the last AI message to check for fact usage
+                ai_messages = [msg for msg in messages if hasattr(msg, "type") and msg.type == "ai"]
+                if ai_messages:
+                    last_response = ai_messages[-1].content if hasattr(ai_messages[-1], "content") else ""
+
+                    # Simple heuristic: check if any fact content appears in response
+                    # TODO: Improve with more sophisticated matching (embeddings, entity extraction)
+                    used_fact_ids = []
+                    for fact_id in self._state.injected_fact_ids:
+                        # Find the fact content
+                        fact = next(
+                            (f for f in (self._state.core_facts + self._state.current_facts) if f.get("id") == fact_id),
+                            None,
+                        )
+                        if fact and fact.get("content"):
+                            # Simple substring check (case-insensitive)
+                            if fact["content"].lower() in str(last_response).lower():
+                                used_fact_ids.append(fact_id)
+
+                    if used_fact_ids:
+                        logger.debug(f"[Extraction #{extraction_id}] Detected {len(used_fact_ids)} facts used in response")
+                        # Note: Actual update to fact_access_log would happen here
+                        # Currently logging for observability, can be extended to update DB
+            except Exception as feedback_err:
+                logger.warning(f"[Extraction #{extraction_id}] Failed to track fact usage: {feedback_err}")
+
         return {LOGS_KEY: trace_logs} if trace_logs else None
 
     def before_agent(
@@ -1131,8 +1212,12 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                         query_type="core",
                         filter_namespaces=self._context_config.core_namespaces,
                         match_count=20,
+                        relevance_threshold=self._context_config.relevance_threshold,
                     )
-                    logger.debug(f"[Context Injection] Loaded {len(self._state.core_facts)} core facts")
+                    logger.debug(
+                        f"[Context Injection] Loaded {len(self._state.core_facts)} core facts "
+                        f"(relevance >= {self._context_config.relevance_threshold})"
+                    )
                 else:
                     logger.debug(f"[Context Injection] Using cached {len(self._state.core_facts)} core facts")
 
@@ -1152,6 +1237,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                     query_type="context",
                     user_queries=user_queries,
                     existing_ids=curr_ids,
+                    relevance_threshold=self._context_config.relevance_threshold,
                 )
                 self._state.current_facts.extend(context_facts)
 
@@ -1159,11 +1245,25 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                 context_parts = []
 
                 if self._state.core_facts:
-                    context_parts.append(self._context_config.core_prompt.format(basic_info=formatted_facts(self._state.core_facts)))
+                    context_parts.append(
+                        self._context_config.core_prompt.format(
+                            basic_info=formatted_facts(
+                                self._state.core_facts,
+                                adaptive=self._context_config.enable_adaptive_formatting,
+                            )
+                        )
+                    )
 
                 if self._state.current_facts:
                     logger.debug(f"Applying {len(self._state.current_facts)} context-specific facts")
-                    context_parts.append(self._context_config.memory_prompt.format(facts=formatted_facts(self._state.current_facts)))
+                    context_parts.append(
+                        self._context_config.memory_prompt.format(
+                            facts=formatted_facts(
+                                self._state.current_facts,
+                                adaptive=self._context_config.enable_adaptive_formatting,
+                            )
+                        )
+                    )
 
                 # Handle context message
                 if context_parts:
@@ -1175,6 +1275,13 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                         )
                     ]
                     trace_logs.append("Updated context message")
+
+                # Track injected fact IDs for usage feedback
+                self._state.injected_fact_ids = [
+                    fact["id"]
+                    for fact in (self._state.core_facts + self._state.current_facts)
+                    if fact.get("id")
+                ]
 
                 # Log summary of operations
                 total_core = len(self._state.core_facts)

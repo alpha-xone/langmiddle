@@ -137,14 +137,51 @@ def messages_summary(
     return result.summary
 
 
-def formatted_facts(facts: list[dict]) -> str:
-    """Format a list of fact dictionaries into a readable string."""
-    return "\n".join(
-        f"- [{' > '.join(fact['namespace'])}] {fact['content']}"
-        if isinstance(fact.get("namespace"), list) and fact.get("namespace")
-        else fact['content']
-        for fact in facts if fact.get("content")
-    )
+def formatted_facts(facts: list[dict], adaptive: bool = False) -> str:
+    """Format a list of fact dictionaries into a readable string.
+
+    Args:
+        facts: List of fact dictionaries
+        adaptive: If True, format based on relevance_score (high/medium/low detail)
+
+    Returns:
+        Formatted string representation of facts
+    """
+    if not adaptive:
+        # Standard formatting
+        return "\n".join(
+            f"- [{' > '.join(fact['namespace'])}] {fact['content']}"
+            if isinstance(fact.get("namespace"), list) and fact.get("namespace")
+            else fact['content']
+            for fact in facts if fact.get("content")
+        )
+
+    # Adaptive formatting based on relevance_score
+    formatted_lines = []
+    for fact in facts:
+        if not fact.get("content"):
+            continue
+
+        relevance = fact.get("relevance_score", 0.5)
+        content = fact["content"]
+        namespace = fact.get("namespace", [])
+        namespace_str = " > ".join(namespace) if isinstance(namespace, list) else ""
+
+        if relevance >= 0.8:
+            # High relevance: Full detail with namespace and metadata
+            line = f"- [{namespace_str}] {content}"
+            if fact.get("intensity"):
+                line += f" (intensity: {fact['intensity']:.1f})"
+        elif relevance >= 0.5:
+            # Medium relevance: Compact bullet point
+            line = f"- {content}"
+        else:
+            # Low relevance (0.3-0.5): Minimal format
+            line = f"• {content[:80]}..." if len(content) > 80 else f"• {content}"
+
+        formatted_lines.append(line)
+
+    return "\n".join(formatted_lines)
 
 
 def break_query_into_atomic(

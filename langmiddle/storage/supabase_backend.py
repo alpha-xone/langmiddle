@@ -977,6 +977,24 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
 
             facts_list: List[Dict[str, Any]] = result.data  # type: ignore
             logger.info(f"Found {len(facts_list)} facts matching query")
+
+            # Log fact accesses for relevance tracking
+            # Extract fact IDs and log the retrieval
+            fact_ids = [fact["id"] for fact in facts_list if fact.get("id")]
+            if fact_ids:
+                try:
+                    log_params = {
+                        "p_fact_ids": fact_ids,
+                        "p_user_id": user_id,
+                        "p_context_type": "context",  # Default to context-based retrieval
+                        "p_query_text": None,
+                        "p_thread_id": None,
+                    }
+                    self.client.rpc("log_fact_access", log_params).execute()
+                    logger.debug(f"Logged access for {len(fact_ids)} facts")
+                except Exception as log_err:
+                    logger.warning(f"Failed to log fact access: {log_err}")
+
             return facts_list
         except Exception as e:
             logger.error(f"Error querying facts: {e}")
@@ -1449,6 +1467,66 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             return stats
         except Exception as e:
             logger.error(f"Error getting fact change stats: {e}")
+            return None
+
+    @with_auth_retry
+    def update_fact_usage_feedback(
+        self,
+        credentials: Optional[Dict[str, Any]],
+        access_log_ids: List[str],
+        was_used: bool,
+    ) -> int:
+        """Update usage feedback for fact access log entries.
+
+        Args:
+            credentials: Authentication credentials
+            access_log_ids: List of access log entry IDs
+            was_used: Whether the facts were actually used in the response
+
+        Returns:
+            Number of records updated
+        """
+        try:
+            result = self.client.rpc(
+                "update_fact_usage_feedback",
+                {"p_access_log_ids": access_log_ids, "p_was_used": was_used}
+            ).execute()
+
+            updated_count: int = int(result.data) if isinstance(result.data, (int, float)) else 0
+            logger.info(f"Updated usage feedback for {updated_count} access log entries")
+            return updated_count
+        except Exception as e:
+            logger.error(f"Error updating fact usage feedback: {e}")
+            return 0
+
+    @with_auth_retry
+    def refresh_relevance_scores(
+        self,
+        credentials: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Refresh relevance scores for all facts.
+
+        Args:
+            credentials: Authentication credentials
+
+        Returns:
+            Dictionary with update statistics (updated_count, avg_score, min_score, max_score)
+        """
+        try:
+            result = self.client.rpc("refresh_all_relevance_scores").execute()
+
+            if not result.data:
+                return None
+
+            stats: Dict[str, Any] = result.data[0]  # type: ignore
+            logger.info(
+                f"Refreshed relevance scores: {stats.get('updated_count')} facts, "
+                f"avg={stats.get('avg_score'):.3f}, "
+                f"range=[{stats.get('min_score'):.3f}, {stats.get('max_score'):.3f}]"
+            )
+            return stats
+        except Exception as e:
+            logger.error(f"Error refreshing relevance scores: {e}")
             return None
 
     # =========================================================================

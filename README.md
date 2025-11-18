@@ -210,6 +210,8 @@ middleware=[
 | **Namespace Organization** | Hierarchical fact categories (`["user", "preferences", "food"]`) |
 | **Automatic Summarization** | Configurable token thresholds |
 | **Atomic Query Breaking** | Splits complex queries for better retrieval |
+| **Relevance Scoring** | Dynamic scoring based on recency, access patterns, and usage feedback |
+| **Adaptive Formatting** | Context detail adjusts based on fact relevance |
 | **Caching** | Embeddings and core facts cached for performance |
 
 #### 📝 Example Usage
@@ -284,6 +286,12 @@ ContextEngineer(
         ["user", "personal_info"],
         ["user", "preferences"]
     ],
+
+    # Relevance scoring (Phase 3)
+    relevance_threshold=0.3,                  # Minimum relevance score to inject
+    similarity_weight=0.7,                    # Weight for vector similarity
+    relevance_weight=0.3,                     # Weight for relevance score
+    enable_adaptive_formatting=True,          # Adjust detail based on relevance
 
     # Backend configuration
     backend_kwargs={'enable_facts': True}
@@ -664,11 +672,20 @@ Response
 
 ```
 Conversation → Extraction → Deduplication → Embedding → Storage
-                                ↓
-                          Query & Retrieve ← User's next message
-                                ↓
-                          Context Injection → Agent
+                                ↓                          ↓
+                          Query & Retrieve         Relevance Scoring
+                                ↓                (recency + access + usage)
+                          Context Injection              ↓
+                          (adaptive detail)      Combined Score
+                                ↓                (70% similarity
+                               Agent              + 30% relevance)
 ```
+
+**Phase 3 Relevance Scoring:**
+- **Recency** (40%): Newer facts score higher (exponential decay over 365 days)
+- **Access Frequency** (30%): Facts used more often get boosted
+- **Usage Feedback** (30%): Facts appearing in agent responses are prioritized
+- **Adaptive Formatting**: High-relevance facts (≥0.8) get full detail, medium (0.5-0.8) compact, low (0.3-0.5) minimal
 
 ---
 
