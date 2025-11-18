@@ -142,6 +142,9 @@ class _MiddlewareState:
     embeddings_cache: dict[str, list[float]] = field(default_factory=dict)
     """Cache for reusing embeddings to improve performance."""
 
+    summerized_msg_ids: set[str] = field(default_factory=set)
+    """Set of message IDs that have been summerized."""
+
     def reset_session_state(self) -> None:
         """Reset per-session state while keeping caches."""
         self.turn_count = 0
@@ -352,7 +355,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         core_namespaces: list[list[str]] = ALWAYS_LOADED_NAMESPACES,
         core_prompt: str = DEFAULT_BASIC_INFO_INJECTOR,
         memory_prompt: str = DEFAULT_FACTS_INJECTOR,
-        max_tokens_before_summarization: int | None = 8000,
+        max_tokens_before_summarization: int | None = 5000,
         max_tokens_before_extraction: int | None = None,
         extraction_interval: int = 3,
         summary_prompt: str = DEFAULT_SUMMARY_PROMPT,
@@ -410,7 +413,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         )
 
         self._summarization_config = summarization_config or SummarizationConfig(
-            max_tokens=max_tokens_before_summarization or 8000,
+            max_tokens=max_tokens_before_summarization or 5000,
             prompt=summary_prompt,
         )
 
@@ -434,11 +437,6 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         self.core_prompt = self._context_config.core_prompt
         self.core_namespaces = self._context_config.core_namespaces
         self.token_counter: TokenCounter = token_counter
-
-        # Backward compatible state access
-        self.core_facts: list[dict[str, Any]] = self._state.core_facts
-        self.current_facts: list[dict[str, Any]] = self._state.current_facts
-        self.user_id: str = self._state.user_id
 
         # Ensure valid backend and model configuration
         if backend.lower() != "supabase":
@@ -577,7 +575,12 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         if not messages:
             return False
 
+        # Skip if all messages have already been summarized
+        if all(msg.id in self._state.summerized_msg_ids for msg in messages if msg.id is not None):
+            return False
+
         total_tokens = self.token_counter(messages)
+
         return total_tokens >= self._summarization_config.max_tokens
 
     # === Extraction Operations ===
@@ -634,12 +637,16 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             return None
 
         try:
-            return messages_summary(
+            res = messages_summary(
                 model=self.model,
                 messages=messages,
                 prev_summary=prev_summary,
                 summary_prompt=self._summarization_config.prompt,
             )
+            self._state.summerized_msg_ids.update(
+                msg.id for msg in messages if msg.id is not None
+            )
+            return res
         except Exception as e:
             logger.error(f"Failed to generate summary: {e}")
             return None
@@ -989,14 +996,11 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                     prev_summary=prev_summary,
                 )
                 if summary_text:
-                    summary_text = f'{self.summarization_config.prefix}{summary_text}'.strip()
-                    if len(summary_msgs) > 0:
-                        logger.debug("Updating existing summary message")
-                        summary_msgs[0].content = summary_text
-                        summary_msgs = summary_msgs[:1]  # Keep only one summary message
-                    else:
-                        logger.debug("Creating new summary message")
-                        summary_msgs.insert(0, HumanMessage(content=summary_text, tags=[SUMMARY_TAG]))
+                    summary_msgs = [HumanMessage(
+                        content=f'{self.summarization_config.prefix}{summary_text}'.strip(),
+                        additional_kwargs={SUMMARY_TAG: True},
+                        id=summary_msgs[0].id if len(summary_msgs) > 0 else None,
+                    )]
                     logger.info("Conversation summarized")
                     is_summarized = True
         except Exception as e:
@@ -1058,15 +1062,13 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
 
                 # Handle context message
                 if context_parts:
-                    combined_content = "\n\n".join(context_parts)
-
-                    if len(context_msgs) > 0:
-                        logger.debug("Updating existing context message")
-                        context_msgs[0].content = combined_content
-                        context_msgs = context_msgs[:1]  # Keep only one context message
-                    else:
-                        logger.debug("Creating new context message")
-                        context_msgs.insert(0, SystemMessage(content=combined_content, tags=[CONTEXT_TAG]))
+                    context_msgs = [
+                        SystemMessage(
+                            content="\n\n".join(context_parts),
+                            additional_kwargs={CONTEXT_TAG: True},
+                            id=context_msgs[0].id if len(context_msgs) > 0 else None,
+                        )
+                    ]
                     trace_logs.append("Updated context message")
 
                 # Log summary of operations
