@@ -290,7 +290,8 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
             Exception: If storage backend initialization fails.
 
         Note:
-            Save operations return trace logs under the 'langmiddle:history:trace' key
+            Save operations automatically track and skip duplicate messages using persistent
+            message ID tracking. Trace logs are returned under 'langmiddle:history:trace'
             for backend monitoring and debugging.
         """
         super().__init__()
@@ -330,7 +331,9 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
             runtime: Runtime context with user_id, thread_id, and auth_token.
 
         Returns:
-            Dict with trace logs under 'langmiddle:history:trace' key, or None
+            Dict with trace logs under 'langmiddle:history:trace' key:
+            {"langmiddle:history:trace": ["Saved 3 messages to thread-123 (skipped 2 duplicates)"]}
+            Returns None if no save operation was performed.
         """
         # Increment call count
         self._model_call_count += 1

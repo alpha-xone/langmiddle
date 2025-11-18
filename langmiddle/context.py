@@ -318,8 +318,8 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
 
     Implementation roadmap:
     - Phase 1: Memory extraction and storage vis supported backends
-    - Phase 2 (Current): Context retrieval and injection into model requests
-    - Phase 3: Dynamic context formatting based on relevance scoring
+    - Phase 2: Context retrieval and injection into model requests
+    - Phase 3 (Current): Dynamic context formatting based on relevance scoring
     - Phase 4: Multi-backend support (vector DB, custom storage adapters)
     - Phase 5: Advanced context optimization (token budgeting, semantic compression)
 
