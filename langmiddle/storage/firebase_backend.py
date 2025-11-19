@@ -4,7 +4,7 @@ Firebase Firestore storage backend implementation.
 This module provides Firebase Firestore-based implementation of the chat storage interface.
 """
 
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Sequence
 
 from langchain_core.messages import AnyMessage
 
@@ -36,7 +36,7 @@ __all__ = ["FirebaseStorageBackend"]
 class FirebaseStorageBackend(ChatStorageBackend):
     """Firebase Firestore implementation of chat storage backend."""
 
-    def __init__(self, credentials_path: Optional[str] = None):
+    def __init__(self, credentials_path: str | None = None):
         """
         Initialize Firebase storage backend.
 
@@ -70,7 +70,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
     def prepare_credentials(
         self,
         user_id: str,
-        auth_token: Optional[str] = None,
+        auth_token: str | None = None,
     ) -> Dict[str, Any]:
         """
         Prepare Firebase-specific credentials.
@@ -87,7 +87,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
             credentials["id_token"] = auth_token
         return credentials
 
-    def authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
+    def authenticate(self, credentials: Dict[str, Any] | None) -> bool:
         """
         Authenticate with Firebase using ID token.
 
@@ -114,7 +114,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
             logger.error(f"Firebase authentication failed: {e}")
             return False
 
-    def extract_user_id(self, credentials: Optional[Dict[str, Any]]) -> Optional[str]:
+    def extract_user_id(self, credentials: Dict[str, Any] | None) -> str | None:
         """
         Extract user ID from Firebase ID token or direct user_id.
 
@@ -173,14 +173,14 @@ class FirebaseStorageBackend(ChatStorageBackend):
             logger.error(f"Error fetching existing messages: {e}")
             return set()
 
-    def ensure_thread_exists(self, credentials: Dict[str, Any] | None, thread_id: str, user_id: str) -> bool:
+    def ensure_thread_exists(self, thread_id: str, user_id: str, credentials: Dict[str, Any] | None = None) -> bool:
         """
         Ensure chat thread exists in Firestore.
 
         Args:
-            credentials: Authentication credentials (unused for Firebase)
             thread_id: Thread identifier
             user_id: User identifier
+            credentials: Optional authentication credentials (unused for Firebase)
 
         Returns:
             True if thread exists or was created
@@ -202,11 +202,11 @@ class FirebaseStorageBackend(ChatStorageBackend):
 
     def save_messages(
         self,
-        credentials: Optional[Dict[str, Any]],
         thread_id: str,
         user_id: str,
         messages: List[AnyMessage],
-        custom_state: Optional[Dict[str, Any]] = None,
+        custom_state: Dict[str, Any] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """
         Save messages to Firestore using batch operations.
@@ -216,6 +216,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
             user_id: User identifier
             messages: List of messages to save
             custom_state: Optional custom state defined in the graph
+            credentials: Optional authentication credentials (unused for Firebase)
 
         Returns:
             Dict with 'saved_count' and 'errors' keys
@@ -226,7 +227,7 @@ class FirebaseStorageBackend(ChatStorageBackend):
         saved_count = 0
         errors = []
 
-        if not self.ensure_thread_exists(credentials, thread_id, user_id):
+        if not self.ensure_thread_exists(user_id=user_id, thread_id=thread_id, credentials=credentials):
             errors.append(f"Failed to ensure thread {thread_id} exists")
             return {"saved_count": saved_count, "errors": errors}
 
@@ -281,14 +282,15 @@ class FirebaseStorageBackend(ChatStorageBackend):
 
     def get_thread(
         self,
-        credentials: Optional[Dict[str, Any]],
         thread_id: str,
+        credentials: Dict[str, Any] | None = None,
     ) -> dict | None:
         """
         Get a thread by ID.
 
         Args:
             thread_id: The ID of the thread to get.
+            credentials: Optional authentication credentials (unused for Firebase)
         """
         if not FIREBASE_AVAILABLE:
             logger.error("Firebase not available")
@@ -438,12 +440,12 @@ class FirebaseStorageBackend(ChatStorageBackend):
 
     def insert_facts(
         self,
-        credentials: Optional[Dict[str, Any]],
         user_id: str,
         facts: Sequence[Dict[str, Any] | str],
-        embeddings: Optional[List[List[float]]] = None,
-        model_dimension: Optional[int] = None,
-        cue_embeddings: Optional[List[List[tuple[str, List[float]]]]] = None,
+        embeddings: List[List[float]] | None = None,
+        model_dimension: int | None = None,
+        cue_embeddings: List[List[tuple[str, List[float]]]] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Insert facts with optional embeddings and cue embeddings into storage."""
         raise NotImplementedError(
@@ -453,13 +455,13 @@ class FirebaseStorageBackend(ChatStorageBackend):
 
     def query_facts(
         self,
-        credentials: Optional[Dict[str, Any]],
-        query_embedding: Optional[List[float]] = None,
-        user_id: Optional[str] = None,
-        model_dimension: Optional[int] = None,
+        query_embedding: List[float] | None = None,
+        user_id: str | None = None,
+        model_dimension: int | None = None,
         match_threshold: float = 0.75,
         match_count: int = 10,
-        filter_namespaces: Optional[List[List[str]]] = None,
+        filter_namespaces: List[List[str]] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> List[Dict[str, Any]]:
         """Query facts using vector similarity search."""
         raise NotImplementedError(
@@ -469,10 +471,10 @@ class FirebaseStorageBackend(ChatStorageBackend):
 
     def get_fact_by_id(
         self,
-        credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any] | None:
         """Get a fact by its ID."""
         raise NotImplementedError(
             "Facts management not supported in Firebase backend. "
@@ -481,11 +483,11 @@ class FirebaseStorageBackend(ChatStorageBackend):
 
     def update_fact(
         self,
-        credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: Optional[str] = None,
-        updates: Optional[Dict[str, Any]] = None,
-        embedding: Optional[List[float]] = None,
+        user_id: str | None = None,
+        updates: Dict[str, Any] | None = None,
+        embedding: List[float] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Update a fact's content and/or metadata."""
         raise NotImplementedError(
@@ -495,9 +497,9 @@ class FirebaseStorageBackend(ChatStorageBackend):
 
     def delete_fact(
         self,
-        credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Delete a fact and its embeddings."""
         raise NotImplementedError(
@@ -507,9 +509,9 @@ class FirebaseStorageBackend(ChatStorageBackend):
 
     def check_processed_message(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
-        message_id: Optional[str] = None,
+        user_id: str | None = None,
+        message_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Check if a message has already been processed."""
         raise NotImplementedError(
@@ -519,10 +521,10 @@ class FirebaseStorageBackend(ChatStorageBackend):
 
     def mark_processed_message(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
-        message_id: Optional[str] = None,
-        thread_id: Optional[str] = None,
+        user_id: str | None = None,
+        message_id: str | None = None,
+        thread_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Mark a message as processed."""
         raise NotImplementedError(
@@ -532,9 +534,9 @@ class FirebaseStorageBackend(ChatStorageBackend):
 
     def check_processed_messages_batch(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
-        message_ids: Optional[List[str]] = None,
+        user_id: str | None = None,
+        message_ids: List[str] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> List[str]:
         """Check which messages have already been processed (batch mode)."""
         raise NotImplementedError(
@@ -544,9 +546,9 @@ class FirebaseStorageBackend(ChatStorageBackend):
 
     def mark_processed_messages_batch(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
-        message_data: Optional[List[Dict[str, str]]] = None,
+        user_id: str | None = None,
+        message_data: List[Dict[str, str]] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Mark multiple messages as processed (batch mode)."""
         raise NotImplementedError(

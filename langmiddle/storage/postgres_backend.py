@@ -8,7 +8,7 @@ using psycopg2 for database connections.
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from ..utils.logging import get_graph_logger
 from .base import SortOrder, ThreadSortBy
@@ -24,7 +24,7 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def __init__(
         self,
-        connection_string: Optional[str] = None,
+        connection_string: str | None = None,
         auto_create_tables: bool = False,
         enable_facts: bool = False,
         load_from_env: bool = True,
@@ -125,10 +125,10 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
     def _execute_query(
         self,
         query: str,
-        params: Optional[tuple] = None,
+        params: tuple | None = None,
         fetch_one: bool = False,
         fetch_all: bool = False,
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """
         Execute a SQL query using psycopg2.
 
@@ -172,7 +172,7 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
             if conn:
                 self._return_connection(conn)
 
-    def authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
+    def authenticate(self, credentials: Dict[str, Any] | None) -> bool:
         """
         Authenticate with PostgreSQL.
 
@@ -188,7 +188,7 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
         logger.debug("PostgreSQL authentication handled by connection string")
         return True
 
-    def extract_user_id(self, credentials: Optional[Dict[str, Any]]) -> Optional[str]:
+    def extract_user_id(self, credentials: Dict[str, Any] | None) -> str | None:
         """
         Extract user ID from credentials.
 
@@ -223,14 +223,15 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def get_thread(
         self,
-        credentials: Optional[Dict[str, Any]],
         thread_id: str,
+        credentials: Dict[str, Any] | None = None,
     ) -> dict | None:
         """
         Get a thread by ID.
 
         Args:
             thread_id: The ID of the thread to get.
+            credentials: Optional authentication credentials (unused for PostgreSQL)
         """
         try:
             result = self._execute_query(
@@ -452,7 +453,7 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
         namespace: str,
         content: str,
         embedding: List[float],
-    ) -> Optional[str]:
+    ) -> str | None:
         """Insert a fact with its embedding."""
         raise NotImplementedError(
             "Facts management not yet implemented in PostgreSQL backend. "
@@ -461,11 +462,11 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def update_fact(
         self,
-        credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: Optional[str] = None,
-        updates: Optional[Dict[str, Any]] = None,
-        embedding: Optional[List[float]] = None,
+        user_id: str | None = None,
+        updates: Dict[str, Any] | None = None,
+        embedding: List[float] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Update a fact and its embedding."""
         raise NotImplementedError(
@@ -475,13 +476,13 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def query_facts(
         self,
-        credentials: Optional[Dict[str, Any]],
-        query_embedding: Optional[List[float]] = None,
-        user_id: Optional[str] = None,
-        model_dimension: Optional[int] = None,
+        query_embedding: List[float] | None = None,
+        user_id: str | None = None,
+        model_dimension: int | None = None,
         match_threshold: float = 0.75,
         match_count: int = 10,
-        filter_namespaces: Optional[List[List[str]]] = None,
+        filter_namespaces: List[List[str]] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> List[Dict[str, Any]]:
         """Query facts using vector similarity."""
         raise NotImplementedError(
@@ -491,10 +492,10 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def get_fact_by_id(
         self,
-        credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any] | None:
         """Get a fact by its ID."""
         raise NotImplementedError(
             "Facts management not yet implemented in PostgreSQL backend. "
@@ -503,9 +504,9 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def delete_fact(
         self,
-        credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Delete a fact and its embeddings."""
         raise NotImplementedError(
@@ -515,9 +516,9 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def check_processed_message(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
-        message_id: Optional[str] = None,
+        user_id: str | None = None,
+        message_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Check if a message has already been processed."""
         raise NotImplementedError(
@@ -527,10 +528,10 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def mark_processed_message(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
-        message_id: Optional[str] = None,
-        thread_id: Optional[str] = None,
+        user_id: str | None = None,
+        message_id: str | None = None,
+        thread_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Mark a message as processed."""
         raise NotImplementedError(
@@ -540,9 +541,9 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def check_processed_messages_batch(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
-        message_ids: Optional[List[str]] = None,
+        user_id: str | None = None,
+        message_ids: List[str] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> List[str]:
         """Check which messages have already been processed (batch mode)."""
         raise NotImplementedError(
@@ -552,9 +553,9 @@ class PostgreSQLStorageBackend(PostgreSQLBaseBackend):
 
     def mark_processed_messages_batch(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
-        message_data: Optional[List[Dict[str, str]]] = None,
+        user_id: str | None = None,
+        message_data: List[Dict[str, str]] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Mark multiple messages as processed (batch mode)."""
         raise NotImplementedError(

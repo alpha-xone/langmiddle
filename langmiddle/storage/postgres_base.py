@@ -7,7 +7,7 @@ between Supabase (which is PostgreSQL-based) and direct PostgreSQL backends.
 
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Sequence
 
 from langchain_core.messages import AnyMessage
 
@@ -339,10 +339,10 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
     def _execute_query(
         self,
         query: str,
-        params: Optional[tuple] = None,
+        params: tuple | None = None,
         fetch_one: bool = False,
         fetch_all: bool = False,
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """
         Execute a SQL query using the backend's connection method.
 
@@ -388,14 +388,14 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
             logger.error(f"Error fetching existing messages: {e}")
             return set()
 
-    def ensure_thread_exists(self, credentials: Dict[str, Any] | None, thread_id: str, user_id: str) -> bool:
+    def ensure_thread_exists(self, thread_id: str, user_id: str, credentials: Dict[str, Any] | None = None) -> bool:
         """
         Ensure chat thread exists in database.
 
         Args:
-            credentials: Authentication credentials (unused for PostgreSQL)
             thread_id: Thread identifier
             user_id: User identifier
+            credentials: Optional authentication credentials (unused for PostgreSQL)
 
         Returns:
             True if thread exists or was created
@@ -418,11 +418,11 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def save_messages(
         self,
-        credentials: Optional[Dict[str, Any]],
         thread_id: str,
         user_id: str,
         messages: List[AnyMessage],
-        custom_state: Optional[Dict[str, Any]] = None,
+        custom_state: Dict[str, Any] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """
         Save messages to database.
@@ -432,7 +432,7 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
             user_id: User identifier
             messages: List of messages to save
             custom_state: Optional custom state defined in the graph
-
+            credentials: Optional authentication credentials (unused for PostgreSQL)
         Returns:
             Dict with 'saved_count' and 'errors' keys
         """
@@ -515,12 +515,12 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def insert_facts(
         self,
-        credentials: Optional[Dict[str, Any]],
         user_id: str,
         facts: Sequence[Dict[str, Any] | str],
-        embeddings: Optional[List[List[float]]] = None,
-        model_dimension: Optional[int] = None,
-        cue_embeddings: Optional[List[List[tuple[str, List[float]]]]] = None,
+        embeddings: List[List[float]] | None = None,
+        model_dimension: int | None = None,
+        cue_embeddings: List[List[tuple[str, List[float]]]] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Insert facts with optional embeddings and cue embeddings into storage.
 
@@ -528,12 +528,12 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
         They will be automatically converted to fact dictionaries.
 
         Args:
-            credentials: Authentication credentials
             user_id: User identifier
             facts: List of facts (strings or dicts)
             embeddings: Optional list of embedding vectors
             model_dimension: Dimension of embeddings
             cue_embeddings: Optional list of (cue_text, embedding) tuples per fact
+            credentials: Optional authentication credentials (unused for PostgreSQL)
         """
         raise NotImplementedError(
             "Facts management not implemented for this backend. "
@@ -542,13 +542,13 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def query_facts(
         self,
-        credentials: Optional[Dict[str, Any]],
-        query_embedding: Optional[List[float]] = None,
-        user_id: Optional[str] = None,
-        model_dimension: Optional[int] = None,
+        query_embedding: List[float] | None = None,
+        user_id: str | None = None,
+        model_dimension: int | None = None,
         match_threshold: float = 0.75,
         match_count: int = 10,
-        filter_namespaces: Optional[List[List[str]]] = None,
+        filter_namespaces: List[List[str]] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> List[Dict[str, Any]]:
         """Query facts using vector similarity search."""
         raise NotImplementedError(
@@ -558,10 +558,10 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def get_fact_by_id(
         self,
-        credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any] | None:
         """Get a fact by its ID."""
         raise NotImplementedError(
             "Facts management not implemented for this backend. "
@@ -570,11 +570,11 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def update_fact(
         self,
-        credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: Optional[str] = None,
-        updates: Optional[Dict[str, Any]] = None,
-        embedding: Optional[List[float]] = None,
+        user_id: str | None = None,
+        updates: Dict[str, Any] | None = None,
+        embedding: List[float] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Update a fact's content and/or metadata."""
         raise NotImplementedError(
@@ -584,9 +584,9 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def delete_fact(
         self,
-        credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Delete a fact and its embeddings."""
         raise NotImplementedError(
@@ -596,9 +596,9 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def get_fact_history(
         self,
-        credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> List[Dict[str, Any]]:
         """Get complete history for a specific fact."""
         raise NotImplementedError(
@@ -608,10 +608,10 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def get_recent_fact_changes(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         limit: int = 50,
-        operation: Optional[str] = None,
+        operation: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> List[Dict[str, Any]]:
         """Get recent fact changes for a user."""
         raise NotImplementedError(
@@ -621,9 +621,9 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
 
     def get_fact_change_stats(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any] | None:
         """Get statistics about fact changes for a user."""
         raise NotImplementedError(
             "Fact history not implemented for this backend. "

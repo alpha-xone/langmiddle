@@ -9,8 +9,9 @@ import hashlib
 import os
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Sequence
 
+from dotenv import load_dotenv
 from jose import JWTError, jwt
 from langchain_core.messages import AnyMessage
 
@@ -22,6 +23,7 @@ logger = get_graph_logger(__name__)
 
 __all__ = ["SupabaseStorageBackend"]
 
+load_dotenv()
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -67,7 +69,7 @@ def thread_to_dict(thread: dict, messages: List[dict]) -> dict:
     return data
 
 
-def extract_user_id_from_credentials(credentials: Optional[Dict[str, Any]]) -> Optional[str]:
+def extract_user_id_from_credentials(credentials: Dict[str, Any] | None) -> str | None:
     """
     Extract user ID from credentials (static utility).
 
@@ -105,7 +107,7 @@ def extract_user_id_from_credentials(credentials: Optional[Dict[str, Any]]) -> O
         return None
 
 
-def get_token_hash(jwt_token: Optional[str]) -> Optional[str]:
+def get_token_hash(jwt_token: str | None) -> str | None:
     """
     Get a hash of JWT token for comparison (avoid storing full token).
 
@@ -192,15 +194,12 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     def __init__(
         self,
         client=None,
-        supabase_url: Optional[str] = None,
-        supabase_key: Optional[str] = None,
-        connection_string: Optional[str] = None,
+        supabase_url: str | None = None,
+        supabase_key: str | None = None,
+        connection_string: str | None = None,
         auto_create_tables: bool = False,
         enable_facts: bool = False,
         enable_day_dreaming: bool = False,
-        load_from_env: bool = True,
-        user_id: Optional[str] = None,
-        credentials: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize Supabase storage backend.
@@ -214,9 +213,6 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             enable_facts: Whether to create facts tables (semantic memory)
             enable_day_dreaming: Whether to create fact deduplication and maintenance functions
                                  (requires enable_facts=True, includes pg_cron job setup)
-            load_from_env: Whether to load credentials from environment variables
-            user_id: User ID (deprecated, use credentials instead)
-            credentials: Authentication credentials dict
         """
         if client:
             self.client = client
@@ -232,18 +228,9 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 "Install with: pip install langmiddle[supabase]"
             )
 
-        # Load from environment if requested
-        if load_from_env and (not supabase_url or not supabase_key):
-            try:
-                from dotenv import load_dotenv
-                load_dotenv()
-            except ImportError:
-                logger.debug("python-dotenv not installed, skipping .env file loading")
-
-            supabase_url = supabase_url or os.getenv("SUPABASE_URL")
-            supabase_key = supabase_key or os.getenv("SUPABASE_ANON_KEY")
-            if not connection_string:
-                connection_string = os.getenv("SUPABASE_CONNECTION_STRING")
+        supabase_url = supabase_url or os.getenv("SUPABASE_URL")
+        supabase_key = supabase_key or os.getenv("SUPABASE_ANON_KEY")
+        connection_string = connection_string or os.getenv("SUPABASE_CONNECTION_STRING")
 
         # Validate credentials
         if not supabase_url or not supabase_key:
@@ -286,8 +273,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
 
     def prepare_credentials(
         self,
-        user_id: Optional[str] = None,
-        auth_token: Optional[str] = None,
+        user_id: str | None = None,
+        auth_token: str | None = None,
     ) -> Dict[str, Any]:
         """Prepare Supabase-specific credentials."""
         credentials = {"user_id": user_id}
@@ -297,11 +284,11 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                 credentials["user_id"] = self.extract_user_id(credentials)
         return credentials
 
-    def extract_user_id(self, credentials: Optional[Dict[str, Any]]) -> Optional[str]:
+    def extract_user_id(self, credentials: Dict[str, Any] | None) -> str | None:
         """Extract user ID from credentials."""
         return extract_user_id_from_credentials(credentials)
 
-    def _ensure_authenticated(self, credentials: Optional[Dict[str, Any]]) -> bool:
+    def _ensure_authenticated(self, credentials: Dict[str, Any] | None) -> bool:
         """
         Ensure authentication is current (with caching).
 
@@ -328,7 +315,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         # Token changed, authenticate
         return self._force_authenticate(credentials)
 
-    def _force_authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
+    def _force_authenticate(self, credentials: Dict[str, Any] | None) -> bool:
         """
         Force authentication (bypass cache).
 
@@ -355,7 +342,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             self._current_token_hash = None
             return False
 
-    def authenticate(self, credentials: Optional[Dict[str, Any]]) -> bool:
+    def authenticate(self, credentials: Dict[str, Any] | None) -> bool:
         """Public authentication method."""
         return self._ensure_authenticated(credentials)
 
@@ -405,7 +392,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             return set()
 
     @with_auth_retry
-    def ensure_thread_exists(self, credentials: Dict[str, Any] | None, thread_id: str, user_id: str) -> bool:
+    def ensure_thread_exists(self, thread_id: str, user_id: str, credentials: Dict[str, Any] | None = None) -> bool:
         """Ensure chat thread exists (with auth)."""
         try:
             # Ensure authenticated
@@ -480,11 +467,11 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def save_messages(
         self,
-        credentials: Optional[Dict[str, Any]],
         thread_id: str,
         messages: List[AnyMessage],
-        user_id: Optional[str] = None,
-        custom_state: Optional[Dict[str, Any]] = None,
+        user_id: str | None = None,
+        custom_state: Dict[str, Any] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Save messages to Supabase."""
         user_id = user_id or self.extract_user_id(credentials)
@@ -541,10 +528,10 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def get_thread(
         self,
-        credentials: Optional[Dict[str, Any]],
         thread_id: str,
-        user_id: Optional[str] = None,
-    ) -> Optional[dict]:
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
+    ) -> dict | None:
         """Get a thread by ID."""
         user_id = user_id or self.extract_user_id(credentials)
         if not user_id:
@@ -584,16 +571,16 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def search_threads(
         self,
-        credentials: Optional[Dict[str, Any]],
         *,
-        user_id: Optional[str] = None,
-        metadata: Optional[dict] = None,
-        values: Optional[dict] = None,
-        ids: Optional[List[str]] = None,
+        user_id: str | None = None,
+        metadata: dict | None = None,
+        values: dict | None = None,
+        ids: List[str] | None = None,
         limit: int = 10,
         offset: int = 0,
-        sort_by: Optional[ThreadSortBy] = "updated_at",
-        sort_order: Optional[SortOrder] = "desc",
+        sort_by: ThreadSortBy | None = "updated_at",
+        sort_order: SortOrder | None = "desc",
+        credentials: Dict[str, Any] | None = None,
     ) -> List[dict]:
         """Search for threads."""
         user_id = user_id or self.extract_user_id(credentials)
@@ -648,9 +635,9 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def delete_thread(
         self,
-        credentials: Optional[Dict[str, Any]],
         thread_id: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ):
         """Delete a thread."""
         user_id = user_id or self.extract_user_id(credentials)
@@ -677,17 +664,16 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def insert_facts(
         self,
-        credentials: Optional[Dict[str, Any]] = None,
-        user_id: Optional[str] = None,
-        facts: Optional[Sequence[Dict[str, Any] | str]] = None,
-        embeddings: Optional[List[List[float]]] = None,
-        model_dimension: Optional[int] = None,
-        cue_embeddings: Optional[List[List[tuple[str, List[float]]]]] = None,
+        facts: Sequence[Dict[str, Any] | str] | None = None,
+        embeddings: List[List[float]] | None = None,
+        model_dimension: int | None = None,
+        cue_embeddings: List[List[tuple[str, List[float]]]] | None = None,
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Insert facts with optional embeddings and cue embeddings.
 
         Args:
-            credentials: Authentication credentials
             user_id: User identifier
             facts: List of facts to insert
             embeddings: List of embeddings for facts (one per fact)
@@ -695,6 +681,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
             cue_embeddings: Optional list of (cue_text, embedding) tuples per fact.
                            Structure: [[('cue1', emb1), ('cue2', emb2)], [('cue3', emb3)], ...]
                            Length must match facts length if provided.
+            credentials: Authentication credentials
         """
         user_id = user_id or self.extract_user_id(credentials)
         if not user_id:
@@ -882,24 +869,24 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def query_facts(
         self,
-        credentials: Optional[Dict[str, Any]],
-        query_embedding: Optional[List[float]] = None,
-        user_id: Optional[str] = None,
-        model_dimension: Optional[int] = None,
+        query_embedding: List[float] | None = None,
+        user_id: str | None = None,
+        model_dimension: int | None = None,
         match_threshold: float = 0.75,
         match_count: int = 10,
-        filter_namespaces: Optional[List[List[str]]] = None,
+        filter_namespaces: List[List[str]] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> List[Dict[str, Any]]:
         """Query facts using vector similarity search or list all facts.
 
         Args:
-            credentials: Authentication credentials
             query_embedding: Query vector for similarity search. If None, lists all facts.
             user_id: User identifier (optional, extracted from credentials if not provided)
             model_dimension: Embedding dimension (optional, inferred from query_embedding)
             match_threshold: Minimum similarity threshold (0-1, default: 0.75)
             match_count: Maximum number of results to return
             filter_namespaces: Optional list of namespace paths to filter by
+            credentials: Authentication credentials
 
         Returns:
             List of fact dictionaries with optional similarity scores
@@ -1003,16 +990,16 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def get_fact_by_id(
         self,
-        credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any] | None:
         """Get a fact by its ID.
 
         Args:
-            credentials: Authentication credentials
             fact_id: Fact identifier
             user_id: User identifier (optional, extracted from credentials if not provided)
+            credentials: Authentication credentials
 
         Returns:
             Fact dictionary if found, None otherwise
@@ -1045,20 +1032,20 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def update_fact(
         self,
-        credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: Optional[str] = None,
-        updates: Optional[Dict[str, Any]] = None,
-        embedding: Optional[List[float]] = None,
+        user_id: str | None = None,
+        updates: Dict[str, Any] | None = None,
+        embedding: List[float] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Update a fact's content and/or metadata.
 
         Args:
-            credentials: Authentication credentials
             fact_id: Fact identifier
             user_id: User identifier (optional, extracted from credentials if not provided)
             updates: Dictionary of fields to update
             embedding: Optional new embedding vector
+            credentials: Authentication credentials
 
         Returns:
             True if update successful, False otherwise
@@ -1114,16 +1101,16 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def delete_fact(
         self,
-        credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Delete a fact and its embeddings.
 
         Args:
-            credentials: Authentication credentials
             fact_id: Fact identifier
             user_id: User identifier (optional, extracted from credentials if not provided)
+            credentials: Authentication credentials
 
         Returns:
             True if deletion successful, False otherwise
@@ -1160,16 +1147,16 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def check_processed_message(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
-        message_id: Optional[str] = None,
+        user_id: str | None = None,
+        message_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Check if message has been processed.
 
         Args:
-            credentials: Authentication credentials
             user_id: User identifier (optional, extracted from credentials if not provided)
             message_id: Message identifier
+            credentials: Authentication credentials
 
         Returns:
             True if message has been processed, False otherwise
@@ -1202,18 +1189,18 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def mark_processed_message(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
-        message_id: Optional[str] = None,
-        thread_id: Optional[str] = None,
+        user_id: str | None = None,
+        message_id: str | None = None,
+        thread_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Mark message as processed.
 
         Args:
-            credentials: Authentication credentials
             user_id: User identifier (optional, extracted from credentials if not provided)
             message_id: Message identifier
             thread_id: Thread identifier
+            credentials: Authentication credentials
 
         Returns:
             True if marking successful, False otherwise
@@ -1255,16 +1242,16 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def check_processed_messages_batch(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
-        message_ids: Optional[List[str]] = None,
+        user_id: str | None = None,
+        message_ids: List[str] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> List[str]:
         """Check which messages have been processed (batch).
 
         Args:
-            credentials: Authentication credentials
             user_id: User identifier (optional, extracted from credentials if not provided)
             message_ids: List of message identifiers to check
+            credentials: Authentication credentials
 
         Returns:
             List of message IDs that have been processed
@@ -1302,16 +1289,16 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def mark_processed_messages_batch(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
-        message_data: Optional[List[Dict[str, str]]] = None,
+        user_id: str | None = None,
+        message_data: List[Dict[str, str]] | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> bool:
         """Mark multiple messages as processed (batch).
 
         Args:
-            credentials: Authentication credentials
             user_id: User identifier (optional, extracted from credentials if not provided)
             message_data: List of dicts with 'message_id' and 'thread_id' keys
+            credentials: Authentication credentials
 
         Returns:
             True if marking successful, False otherwise
@@ -1353,16 +1340,16 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def get_fact_history(
         self,
-        credentials: Optional[Dict[str, Any]],
         fact_id: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> List[Dict[str, Any]]:
         """Get complete history for a fact.
 
         Args:
-            credentials: Authentication credentials
             fact_id: Fact identifier
             user_id: User identifier (optional, extracted from credentials if not provided)
+            credentials: Authentication credentials
 
         Returns:
             List of history records for the fact
@@ -1393,18 +1380,18 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def get_recent_fact_changes(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         limit: int = 50,
-        operation: Optional[str] = None,
+        operation: str | None = None,
+        credentials: Dict[str, Any] | None = None,
     ) -> List[Dict[str, Any]]:
         """Get recent fact changes for a user.
 
         Args:
-            credentials: Authentication credentials
             user_id: User identifier (optional, extracted from credentials if not provided)
             limit: Maximum number of changes to return
             operation: Optional filter by operation type (INSERT, UPDATE, DELETE)
+            credentials: Authentication credentials
 
         Returns:
             List of recent fact changes
@@ -1435,14 +1422,14 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def get_fact_change_stats(
         self,
-        credentials: Optional[Dict[str, Any]],
-        user_id: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+        user_id: str | None = None,
+        credentials: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any] | None:
         """Get statistics about fact changes.
 
         Args:
-            credentials: Authentication credentials
             user_id: User identifier (optional, extracted from credentials if not provided)
+            credentials: Authentication credentials
 
         Returns:
             Dictionary with change statistics, None if error
@@ -1472,16 +1459,16 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def update_fact_usage_feedback(
         self,
-        credentials: Optional[Dict[str, Any]],
         access_log_ids: List[str],
         was_used: bool,
+        credentials: Dict[str, Any] | None = None,
     ) -> int:
         """Update usage feedback for fact access log entries.
 
         Args:
-            credentials: Authentication credentials
             access_log_ids: List of access log entry IDs
             was_used: Whether the facts were actually used in the response
+            credentials: Authentication credentials
 
         Returns:
             Number of records updated
@@ -1502,8 +1489,8 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     @with_auth_retry
     def refresh_relevance_scores(
         self,
-        credentials: Optional[Dict[str, Any]],
-    ) -> Optional[Dict[str, Any]]:
+        credentials: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any] | None:
         """Refresh relevance scores for all facts.
 
         Args:
@@ -1536,10 +1523,10 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
     def _execute_query(
         self,
         query: str,
-        params: Optional[tuple] = None,
+        params: tuple | None = None,
         fetch_one: bool = False,
         fetch_all: bool = False,
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """Not supported - use Supabase query builder instead."""
         raise NotImplementedError(
             "Direct SQL execution not supported via Supabase client. "
