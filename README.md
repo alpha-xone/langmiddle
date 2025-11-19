@@ -56,6 +56,9 @@ pip install langmiddle
 
 **With Optional Backends:**
 ```bash
+# For SQLite with vector search (sqlite-vec)
+pip install langmiddle[sqlite]
+
 # For PostgreSQL
 pip install langmiddle[postgres]
 
@@ -332,29 +335,45 @@ ContextEngineer(
 
 ### Comparison Guide
 
-| Backend | Best For | Setup Complexity | Scalability | Auth | Cost |
-|---------|----------|------------------|-------------|------|------|
-| **SQLite** | • Local development<br>• Demos<br>• Single-user apps | ⭐ Trivial | 🔵 Single machine | None | Free |
-| **PostgreSQL** | • Self-hosted production<br>• Custom infrastructure<br>• Full control | ⭐⭐ Medium | 🔵🔵🔵 High (with replication) | Custom | Infrastructure cost |
-| **Supabase** | • Web apps<br>• Multi-tenant SaaS<br>• Real-time features | ⭐⭐ Easy | 🔵🔵🔵 High (managed) | JWT + RLS | Free tier + usage |
-| **Firebase** | • Mobile apps<br>• Google Cloud ecosystem<br>• Real-time sync | ⭐⭐ Easy | 🔵🔵🔵 Global (managed) | Firebase Auth | Free tier + usage |
+| Backend | Best For | Setup Complexity | Scalability | Vector Search | Auth | Cost |
+|---------|----------|------------------|-------------|---------------|------|------|
+| **SQLite** | • Local development<br>• Demos<br>• Single-user apps | ⭐ Trivial | 🔵 Single machine | ✅ (sqlite-vec) | None | Free |
+| **PostgreSQL** | • Self-hosted production<br>• Custom infrastructure<br>• Full control | ⭐⭐ Medium | 🔵🔵🔵 High (with replication) | ✅ (pgvector) | Custom | Infrastructure cost |
+| **Supabase** | • Web apps<br>• Multi-tenant SaaS<br>• Real-time features | ⭐⭐ Easy | 🔵🔵🔵 High (managed) | ✅ (pgvector) | JWT + RLS | Free tier + usage |
+| **Firebase** | • Mobile apps<br>• Google Cloud ecosystem<br>• Real-time sync | ⭐⭐ Easy | 🔵🔵🔵 Global (managed) | ❌ | Firebase Auth | Free tier + usage |
 
 ---
 
 ### 🗂️ Backend Configuration
 
 <details>
-<summary><b>SQLite</b> — Zero-config local storage</summary>
+<summary><b>SQLite</b> — Zero-config local storage with vector search</summary>
 
 ```python
 from langmiddle.history import ChatSaver
+from langmiddle.context import ContextEngineer
 
-# File-based (persistent)
+# Basic chat storage (file-based)
 ChatSaver(backend="sqlite", db_path="./chat.db")
+
+# With semantic memory (requires sqlite-vec)
+# Install: pip install langmiddle[sqlite]
+store = ChatStorage.create(
+    "sqlite",
+    db_path="./chat.db",
+    auto_create_tables=True,
+    enable_facts=True  # Enables vector similarity search
+)
 
 # In-memory (testing/dev)
 ChatSaver(backend="sqlite", db_path=":memory:")
 ```
+
+**Features:**
+- ✅ Zero configuration required
+- ✅ Vector similarity search via [sqlite-vec](https://github.com/asg017/sqlite-vec)
+- ✅ Full Phase 3 relevance scoring
+- ✅ Perfect for local development and demos
 
 **No environment variables needed!**
 
