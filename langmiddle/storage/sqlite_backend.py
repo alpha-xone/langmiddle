@@ -746,6 +746,12 @@ class SQLiteStorageBackend(ChatStorageBackend):
                 "errors": ["Facts management not enabled"]
             }
 
+        # Infer model_dimension from embeddings if not provided
+        if embeddings and not model_dimension:
+            if embeddings and embeddings[0]:
+                model_dimension = len(embeddings[0])
+                logger.debug(f"Inferred model_dimension={model_dimension} from embeddings")
+
         conn: sqlite3.Connection | None = None
 
         try:
@@ -849,15 +855,98 @@ class SQLiteStorageBackend(ChatStorageBackend):
         filter_namespaces: List[List[str]] | None = None,
         credentials: Dict[str, Any] | None = None,
     ) -> List[Dict[str, Any]]:
-        """Query facts using vector similarity search with sqlite-vec."""
-        if not self.enable_facts or not query_embedding or not model_dimension:
+        """Query facts using vector similarity search with sqlite-vec.
+
+        If query_embedding is None, lists all facts (optionally filtered by namespace).
+        """
+        if not self.enable_facts:
             return []
+
+        # Infer model_dimension from query_embedding if not provided
+        if query_embedding and not model_dimension:
+            model_dimension = len(query_embedding)
+            logger.debug(f"Inferred model_dimension={model_dimension} from query_embedding")
 
         conn: sqlite3.Connection | None = None
 
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
+
+            # If no query_embedding, list all facts (no similarity search)
+            if query_embedding is None:
+                # Build query with namespace filter if provided
+                query = """
+                    SELECT
+                        id, content, namespace, language, intensity, confidence,
+                        model_dimension, created_at, updated_at, access_count,
+                        last_accessed_at, relevance_score
+                    FROM facts
+                    WHERE user_id = ?
+                """
+                params = [user_id]
+
+                # Add namespace filter if specified
+                if filter_namespaces:
+                    # SQLite doesn't have array operations, so we filter in Python
+                    cursor.execute(query + " LIMIT ?", params + [match_count * 10])
+                else:
+                    cursor.execute(query + " LIMIT ?", params + [match_count])
+
+                rows = cursor.fetchall()
+
+                if not self._persistent_conn:
+                    conn.close()
+
+                if not rows:
+                    logger.debug(f"No facts found for user_id={user_id}")
+                    return []
+
+                results = []
+                for row in rows:
+                    try:
+                        namespace = json.loads(row[2])
+                    except Exception:
+                        namespace = []
+
+                    # Filter by namespaces if specified
+                    if filter_namespaces:
+                        namespace_match = False
+                        for ns_filter in filter_namespaces:
+                            if len(namespace) >= len(ns_filter):
+                                if namespace[:len(ns_filter)] == ns_filter:
+                                    namespace_match = True
+                                    break
+                        if not namespace_match:
+                            continue
+
+                    results.append({
+                        "id": row[0],
+                        "content": row[1],
+                        "namespace": namespace,
+                        "language": row[3],
+                        "intensity": row[4],
+                        "confidence": row[5],
+                        "model_dimension": row[6],
+                        "created_at": row[7],
+                        "updated_at": row[8],
+                        "access_count": row[9],
+                        "last_accessed_at": row[10],
+                        "relevance_score": row[11] or 0.5,
+                    })
+
+                    if len(results) >= match_count:
+                        break
+
+                logger.info(f"Listed {len(results)} facts for user_id={user_id}")
+                return results
+
+            # Vector similarity search mode
+            if not model_dimension:
+                logger.error("model_dimension required when query_embedding is provided")
+                if not self._persistent_conn:
+                    conn.close()
+                return []
 
             table_name = f"fact_embeddings_{model_dimension}"
 

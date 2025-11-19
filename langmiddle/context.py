@@ -377,7 +377,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
     Attributes:
         model: The LLM model for context analysis and memory extraction.
         embedder: Embedding model for memory representation.
-        backend: Database backend to use. Currently only supports "supabase".
+        backend: Database backend to use. Supports: "supabase", "postgres", "sqlite", "firebase".
         extraction_prompt: System prompt guiding the facts extraction process.
         update_prompt: Custom prompt string guiding facts updating.
         core_prompt: Custom prompt string for core facts injection.
@@ -424,7 +424,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         Args:
             model: LLM model for context analysis and memory extraction.
             embedder: Embedding model for memory representation.
-            backend: Database backend to use. Currently only supports "supabase".
+            backend: Database backend to use. Supports: "supabase", "postgres", "sqlite", "firebase".
             extraction_prompt: Custom prompt string guiding facts extraction.
             update_prompt: Custom prompt string guiding facts updating.
             core_namespaces: List of namespaces to always load into context.
@@ -476,30 +476,22 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
 
         # Internal state management
         self._state = _MiddlewareState()
-
-        # Public attributes for backward compatibility
-        self.max_tokens_before_summarization: int | None = self._summarization_config.max_tokens
-        self.max_tokens_before_extraction: int | None = self._extraction_config.max_tokens
-        self.extraction_interval: int = self._extraction_config.interval
-        self.summary_prompt: str = self._summarization_config.prompt
-        self.extraction_prompt = self._extraction_config.prompt
-        self.update_prompt = self._extraction_config.update_prompt
-        self.memory_prompt = self._context_config.memory_prompt
-        self.core_prompt = self._context_config.core_prompt
-        self.core_namespaces = self._context_config.core_namespaces
         self.token_counter: TokenCounter = token_counter
 
-        # Ensure valid backend and model configuration
-        if backend.lower() != "supabase":
-            logger.warning(f"Invalid backend: {backend}. Using default backend 'supabase'.")
-            backend = "supabase"
-
+        # Ensure valid backend configuration
+        supported_backends = ["supabase", "sqlite"]
         self.backend: str = backend.lower()
+        if self.backend not in supported_backends:
+            logger.warning(
+                f"Unknown backend: {backend}. Supported backends: {supported_backends}. "
+                "Using default backend 'sqlite'."
+            )
+            self.backend = "sqlite"
 
         self.model: BaseChatModel | None = None
         self.embedder: Embeddings | None = None
         self.storage: Any = None
-        self.embeddings_cache: dict[str, list[float]] = self._state.embeddings_cache  # Backward compat
+        self.embeddings_cache: dict[str, list[float]] = self._state.embeddings_cache
 
         # Initialize LLM model
         if isinstance(model, str):
