@@ -6,7 +6,7 @@ including virtual embedding tables which are otherwise hard to view.
 """
 
 import sqlite3
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 
 def _get_connection(db_path: str) -> sqlite3.Connection:
