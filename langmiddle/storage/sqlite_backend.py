@@ -219,7 +219,9 @@ class SQLiteStorageBackend(ChatStorageBackend):
         Returns:
             User ID if provided
         """
-        return credentials.get("user_id") if credentials else None
+        if not credentials or not isinstance(credentials, dict):
+            return None
+        return credentials.get("user_id")
 
     def get_existing_message_ids(self, thread_id: str) -> set:
         """
@@ -361,7 +363,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
             else:
                 # Use context manager for file-based database
                 with sqlite3.connect(self.db_path) as conn:
-                    if not self.ensure_thread_exists(user_id=user_id, thread_id=thread_id):
+                    if not self.ensure_thread_exists(thread_id=thread_id, user_id=user_id):
                         return {"saved_count": 0, "errors": ["Thread does not exist"]}
 
                     if custom_state:
@@ -872,6 +874,9 @@ class SQLiteStorageBackend(ChatStorageBackend):
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
+
+            if match_count is None:
+                match_count = 10
 
             # If no query_embedding, list all facts (no similarity search)
             if query_embedding is None:

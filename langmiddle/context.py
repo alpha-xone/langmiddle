@@ -39,6 +39,7 @@ from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
 from langgraph.typing import ContextT
 
+from .config import StorageConfig
 from .memory.facts_manager import (
     ALWAYS_LOADED_NAMESPACES,
     apply_fact_actions,
@@ -314,7 +315,8 @@ def _query_facts_with_validation(
                     facts = storage.backend.query_facts(
                         credentials=credentials,
                         query_embedding=query_embedding,
-                        match_count=match_count,
+                        # Ensure a safe default is passed to backends that expect an int
+                        match_count=(match_count or 10),
                     )
 
                     # Add facts that aren't already present and meet relevance threshold
@@ -399,7 +401,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         self,
         model: str | BaseChatModel,
         embedder: str | Embeddings,
-        backend: str = "supabase",
+        backend: str | StorageConfig = "supabase",
         *,
         extraction_prompt: str = DEFAULT_FACTS_EXTRACTOR,
         update_prompt: str = DEFAULT_FACTS_UPDATER,
@@ -424,7 +426,9 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         Args:
             model: LLM model for context analysis and memory extraction.
             embedder: Embedding model for memory representation.
-            backend: Database backend to use. Supports: "supabase", "postgres", "sqlite", "firebase".
+            backend: Storage backend to use. Can be:
+                - A string: 'supabase', 'postgres', 'sqlite', 'firebase'
+                - A StorageConfig object: Shared configuration object
             extraction_prompt: Custom prompt string guiding facts extraction.
             update_prompt: Custom prompt string guiding facts updating.
             core_namespaces: List of namespaces to always load into context.
@@ -441,7 +445,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             token_counter: Function to count tokens in messages.
             model_kwargs: Additional keyword arguments for model initialization.
             embedder_kwargs: Additional keyword arguments for embedder initialization.
-            backend_kwargs: Additional keyword arguments for backend initialization.
+            backend_kwargs: Additional keyword arguments for backend initialization (ignored if backend is StorageConfig).
             extraction_config: Optional ExtractionConfig object (overrides individual params).
             summarization_config: Optional SummarizationConfig object (overrides individual params).
             context_config: Optional ContextConfig object (overrides individual params).
@@ -478,15 +482,21 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         self._state = _MiddlewareState()
         self.token_counter: TokenCounter = token_counter
 
+        # Handle StorageConfig object
+        if isinstance(backend, StorageConfig):
+            backend_kwargs = backend.to_kwargs()
+            self.backend = backend.backend.lower()
+        else:
+            self.backend = backend.lower()
+
         # Ensure valid backend configuration
-        supported_backends = ["supabase", "sqlite"]
-        self.backend: str = backend.lower()
+        supported_backends = ["supabase", "postgres", "postgresql", "sqlite", "firebase"]
         if self.backend not in supported_backends:
             logger.warning(
-                f"Unknown backend: {backend}. Supported backends: {supported_backends}. "
-                "Using default backend 'sqlite'."
+                f"Unknown backend: {backend}. Supported: {supported_backends}. "
+                "Using default backend 'supabase'."
             )
-            self.backend = "sqlite"
+            self.backend = "supabase"
 
         self.model: BaseChatModel | None = None
         self.embedder: Embeddings | None = None
@@ -537,10 +547,10 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         if self.model is not None and self.embedder is not None:
             try:
                 # For now, we don't pass credentials here - they'll be provided per-request
-                self.storage = ChatStorage.create(backend, **(backend_kwargs or {}))
-                logger.debug(f"Initialized storage backend: {backend}")
+                self.storage = ChatStorage.create(self.backend, **(backend_kwargs or {}))
+                logger.debug(f"Initialized storage backend: {self.backend}")
             except Exception as e:
-                logger.error(f"Failed to initialize storage backend '{backend}': {e}")
+                logger.error(f"Failed to initialize storage backend '{self.backend}': {e}")
                 self.storage = None
 
         if self.model is None or self.embedder is None:

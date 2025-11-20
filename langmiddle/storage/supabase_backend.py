@@ -86,6 +86,10 @@ def extract_user_id_from_credentials(credentials: Dict[str, Any] | None) -> str 
     if not credentials:
         return None
 
+    # Handle case where credentials might be a string instead of dict
+    if not isinstance(credentials, dict):
+        return None
+
     # 1. Direct user_id in credentials
     user_id = credentials.get("user_id")
     if user_id:
@@ -300,7 +304,13 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Returns:
             True if authenticated or no auth needed
         """
-        jwt_token = credentials.get("jwt_token") if credentials else None
+        # Credentials may sometimes be a plain token string (legacy usage), handle both cases
+        if isinstance(credentials, dict):
+            jwt_token = credentials.get("jwt_token")
+        elif isinstance(credentials, str):
+            jwt_token = credentials
+        else:
+            jwt_token = None
 
         if not jwt_token:
             logger.debug("No JWT token provided, allowing non-RLS access")
@@ -325,7 +335,12 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         Returns:
             True if authentication successful
         """
-        jwt_token = credentials.get("jwt_token") if credentials else None
+        if isinstance(credentials, dict):
+            jwt_token = credentials.get("jwt_token")
+        elif isinstance(credentials, str):
+            jwt_token = credentials
+        else:
+            jwt_token = None
 
         if not jwt_token:
             self._current_token_hash = None
@@ -481,7 +496,7 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         saved_count = 0
         errors = []
 
-        if not self.ensure_thread_exists(credentials, thread_id, user_id):
+        if not self.ensure_thread_exists(thread_id=thread_id, user_id=user_id, credentials=credentials):
             errors.append(f"Failed to ensure thread {thread_id} exists")
             return {"saved_count": saved_count, "errors": errors}
 

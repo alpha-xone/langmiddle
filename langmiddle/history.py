@@ -17,6 +17,7 @@ from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
 from langgraph.typing import ContextT
 
+from .config import StorageConfig
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
 from .utils.messages import filter_tool_messages
@@ -270,7 +271,7 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
     def __init__(
         self,
         save_interval: int = 1,
-        backend: str = "sqlite",
+        backend: str | StorageConfig = "sqlite",
         **backend_kwargs: Any,
     ) -> None:
         """Initialize chat history middleware.
@@ -278,9 +279,10 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         Args:
             save_interval: Save to database after every N model responses (default: 1).
                 Must be >= 1.
-            backend: Storage backend to use. Supported values: 'sqlite', 'supabase', 'firebase'.
-                Defaults to 'sqlite'.
-            **backend_kwargs: Backend-specific initialization parameters:
+            backend: Storage backend to use. Can be:
+                - A string: 'sqlite', 'supabase', 'firebase' (default: 'sqlite')
+                - A StorageConfig object: Shared configuration object
+            **backend_kwargs: Backend-specific initialization parameters (ignored if backend is StorageConfig):
                 - For SQLite: db_path (str, default: ":memory:" for in-memory database)
                 - For Supabase: supabase_url (str), supabase_key (str), or client (optional)
                 - For Firebase: credentials_path (str, optional)
@@ -304,16 +306,22 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         self._model_call_count: int = 0
         self._saved_msg_ids: set[str] = set()  # Persistent tracking of saved message IDs
 
-        # Set default db_path for SQLite if not provided
-        if backend == "sqlite" and "db_path" not in backend_kwargs:
-            backend_kwargs["db_path"] = ":memory:"
+        # Handle StorageConfig object
+        if isinstance(backend, StorageConfig):
+            backend_kwargs = backend.to_kwargs()
+            backend_type = backend.backend
+        else:
+            backend_type = backend
+            # Set default db_path for SQLite if not provided
+            if backend_type == "sqlite" and "db_path" not in backend_kwargs:
+                backend_kwargs["db_path"] = ":memory:"
 
         # Initialize storage backend
         try:
-            self.storage = ChatStorage.create(backend, **backend_kwargs)
-            logger.info(f"Initialized middleware {self.name} with backend: {backend}")
+            self.storage = ChatStorage.create(backend_type, **backend_kwargs)
+            logger.info(f"Initialized middleware {self.name} with backend: {backend_type}")
         except Exception as e:
-            logger.error(f"Failed to initialize storage backend '{backend}': {e}")
+            logger.error(f"Failed to initialize storage backend '{backend_type}': {e}")
             logger.error(f"Initiation failed - the middleware {self.name} will be skipped during execution.")
 
     def after_agent(
