@@ -16,12 +16,13 @@ from .firebase_backend import FirebaseStorageBackend
 from .postgres_backend import PostgreSQLStorageBackend
 from .sqlite_backend import SQLiteStorageBackend
 from .supabase_backend import SupabaseStorageBackend
+from .sqlite_tools import inspect_database, peek_table, peek_embeddings
 
 logger = get_graph_logger(__name__)
 
 load_dotenv()
 
-__all__ = ["ChatStorage"]
+__all__ = ["ChatStorage", "inspect_database", "peek_table", "peek_embeddings"]
 
 
 class ChatStorage:
