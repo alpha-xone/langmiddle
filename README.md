@@ -103,37 +103,90 @@ agent.invoke(
 )
 ```
 
-### With Long-Term Memory (ContextEngineer)
+### Production Setup (Recommended)
 
-Add semantic memory and auto-summarization:
+For production apps, use `StorageConfig` to share settings between middleware components (like `ContextEngineer` for memory and `ChatSaver` for history).
 
 ```python
+from langchain.agents import create_agent
+from langmiddle import StorageConfig
+from langmiddle.history import ChatSaver, StorageContext
 from langmiddle.context import ContextEngineer
 
+# 1. Define shared configuration (e.g., for Supabase)
+config = StorageConfig(
+    backend="supabase",
+    enable_facts=True,
+    auto_create_tables=True
+)
+
+# 2. Create agent with middleware
 agent = create_agent(
     model="openai:gpt-4o",
     tools=[],
     context_schema=StorageContext,
     middleware=[
+        # Both components use the same config
         ContextEngineer(
             model="openai:gpt-4o",
             embedder="openai:text-embedding-3-small",
-            backend="supabase",
-            backend_kwargs={'enable_facts': True}
-        )
-    ],
+            backend=config
+        ),
+        ChatSaver(backend=config)
+    ]
 )
 
-# Agent now remembers user preferences, past decisions, and context!
+# 3. Invoke with context
 agent.invoke(
-    input={"messages": [{"role": "user", "content": "What are my food preferences?"}]},
+    input={"messages": [{"role": "user", "content": "I'm vegan."}]},
     context=StorageContext(
-        thread_id="conversation-123",
-        user_id="user-456",
+        thread_id="thread-1",
+        user_id="user-1",
         auth_token="your-jwt-token"
     )
 )
 ```
+
+---
+
+## 🔍 How It Works
+
+### Message Flow
+
+```
+User Input
+    ↓
+[ToolRemover] ← Cleans tool messages (optional)
+    ↓
+[ContextEngineer.before_agent] ← Injects facts + summary
+    ↓
+🤖 LangGraph Agent
+    ↓
+[ContextEngineer.after_agent] ← Extracts new facts
+    ↓
+[ChatSaver] ← Persists conversation
+    ↓
+Response
+```
+
+### Fact Lifecycle
+
+```
+Conversation → Extraction → Deduplication → Embedding → Storage
+                                ↓                          ↓
+                          Query & Retrieve         Relevance Scoring
+                                ↓                (recency + access + usage)
+                          Context Injection              ↓
+                          (adaptive detail)      Combined Score
+                                ↓                (70% similarity
+                               Agent              + 30% relevance)
+```
+
+**Phase 3 Relevance Scoring:**
+- **Recency** (40%): Newer facts score higher (exponential decay over 365 days)
+- **Access Frequency** (30%): Facts used more often get boosted
+- **Usage Feedback** (30%): Facts appearing in agent responses are prioritized
+- **Adaptive Formatting**: High-relevance facts (≥0.8) get full detail, medium (0.5-0.8) compact, low (0.3-0.5) minimal
 
 ---
 
@@ -152,12 +205,18 @@ agent.invoke(
 **Example:**
 ```python
 from langmiddle.history import ChatSaver
+from langmiddle import StorageConfig
 
+# Option 1: Simple string setup
 ChatSaver(
     backend="sqlite",
     db_path="./chat.db",
-    save_interval=1  # Save after every agent response
+    save_interval=1
 )
+
+# Option 2: Shared config object (Recommended)
+config = StorageConfig(backend="sqlite", db_path="./chat.db")
+ChatSaver(backend=config)
 ```
 
 **Supported Backends:**
@@ -220,12 +279,12 @@ middleware=[
 #### 📝 Example Usage
 
 ```python
+from langmiddle import StorageConfig
 from langmiddle.context import ContextEngineer
-from langmiddle.storage import ChatStorage
 
-# 1. First-time setup: Create tables
-store = ChatStorage.create(
-    "supabase",
+# 1. Define configuration
+config = StorageConfig(
+    backend="supabase",
     auto_create_tables=True,
     enable_facts=True
 )
@@ -239,10 +298,9 @@ agent = create_agent(
         ContextEngineer(
             model="openai:gpt-4o",
             embedder="openai:text-embedding-3-small",
-            backend="supabase",
-            max_tokens_before_summarization=5000,  # Trigger summarization at 5k tokens
-            extraction_interval=3,  # Extract facts every 3 turns
-            backend_kwargs={'enable_facts': True}
+            backend=config,  # Pass config object
+            max_tokens_before_summarization=5000,
+            extraction_interval=3
         )
     ],
 )
@@ -550,21 +608,25 @@ agent.invoke(
 
 ```python
 from langchain.agents import create_agent
+from langmiddle import StorageConfig
 from langmiddle.context import ContextEngineer
 from langmiddle.storage import ChatStorage
 import os
 
-# 1. One-time setup
+# 1. Define shared config
+config = StorageConfig(
+    backend="supabase",
+    enable_facts=True,
+    auto_create_tables=True
+)
+
+# 2. One-time setup (optional, if not using auto_create_tables in config)
 if os.getenv("INIT_TABLES"):
-    store = ChatStorage.create(
-        "supabase",
-        auto_create_tables=True,
-        enable_facts=True
-    )
+    store = ChatStorage.create(**config.to_kwargs())
     print("✅ Tables created!")
     exit()
 
-# 2. Create agent
+# 3. Create agent
 agent = create_agent(
     model="openai:gpt-4o",
     tools=[],
@@ -573,15 +635,14 @@ agent = create_agent(
         ContextEngineer(
             model="openai:gpt-4o",
             embedder="openai:text-embedding-3-small",
-            backend="supabase",
+            backend=config,
             max_tokens_before_summarization=5000,
-            extraction_interval=3,
-            backend_kwargs={'enable_facts': True}
+            extraction_interval=3
         )
     ]
 )
 
-# 3. Use in your app
+# 4. Use in your app
 def chat(user_id: str, thread_id: str, message: str, jwt_token: str):
     response = agent.invoke(
         {"messages": [{"role": "user", "content": message}]},
@@ -664,47 +725,6 @@ agent = create_agent(
 ```
 
 </details>
-
----
-
-## 🔍 How It Works
-
-### Message Flow
-
-```
-User Input
-    ↓
-[ToolRemover] ← Cleans tool messages (optional)
-    ↓
-[ContextEngineer.before_agent] ← Injects facts + summary
-    ↓
-🤖 LangGraph Agent
-    ↓
-[ContextEngineer.after_agent] ← Extracts new facts
-    ↓
-[ChatSaver] ← Persists conversation
-    ↓
-Response
-```
-
-### Fact Lifecycle
-
-```
-Conversation → Extraction → Deduplication → Embedding → Storage
-                                ↓                          ↓
-                          Query & Retrieve         Relevance Scoring
-                                ↓                (recency + access + usage)
-                          Context Injection              ↓
-                          (adaptive detail)      Combined Score
-                                ↓                (70% similarity
-                               Agent              + 30% relevance)
-```
-
-**Phase 3 Relevance Scoring:**
-- **Recency** (40%): Newer facts score higher (exponential decay over 365 days)
-- **Access Frequency** (30%): Facts used more often get boosted
-- **Usage Feedback** (30%): Facts appearing in agent responses are prioritized
-- **Adaptive Formatting**: High-relevance facts (≥0.8) get full detail, medium (0.5-0.8) compact, low (0.3-0.5) minimal
 
 ---
 
