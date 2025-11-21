@@ -15,12 +15,12 @@ class AuthClient:
 
     # Shared backend configuration
     SHARED_PROJECT_URL = os.getenv(
-        "LANGMIDDLE_PROJECT_URL", "https://langmiddle.supabase.co"
+        "LANGMIDDLE_PROJECT_URL", "https://frfdkegapvchcnczyesb.supabase.co"
     )
     SHARED_ANON_KEY = os.getenv(
         "LANGMIDDLE_ANON_KEY",
         # This is a public anon key - safe to embed
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhbmdtaWRkbGUiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTYzMjgwNjQwMCwiZXhwIjoxOTQ4MzgyNDAwfQ.placeholder",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZyZmRrZWdhcHZjaGNuY3p5ZXNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMxNTE1MjcsImV4cCI6MjA3ODcyNzUyN30.8br0FE9Dbk0dmiPCz8Lqzi4rb0r9vO_P6VU5S8uOtNk",
     )
 
     def __init__(self) -> None:
