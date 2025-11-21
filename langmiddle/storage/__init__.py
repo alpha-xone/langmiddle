@@ -26,16 +26,23 @@ __all__ = ["ChatStorage", "inspect_database", "peek_table", "peek_embeddings"]
 
 
 class ChatStorage:
-    """Unified interface for chat storage across different backends."""
+    """Unified interface for chat storage across different backends.
 
-    def __init__(self, backend: ChatStorageBackend):
+    Supports automatic authentication for 'supabase-shared' backend.
+    """
+
+    def __init__(self, backend: ChatStorageBackend, backend_type: str = "unknown"):
         """
         Initialize chat storage with a specific backend.
 
         Args:
             backend: Storage backend implementation
+            backend_type: Type of backend (for internal tracking)
         """
         self.backend = backend
+        self.backend_type = backend_type
+        self._auth_token: str | None = None
+        self._user_id: str | None = None
 
     @classmethod
     def create(cls, backend_type: str, **kwargs) -> "ChatStorage":
@@ -43,7 +50,7 @@ class ChatStorage:
         Factory method to create storage with specific backend.
 
         Args:
-            backend_type: Type of backend ('supabase', 'postgres', 'sqlite', 'firebase')
+            backend_type: Type of backend ('supabase-shared', 'supabase', 'postgres', 'sqlite', 'firebase')
             **kwargs: Backend-specific initialization parameters
 
         Returns:
@@ -52,6 +59,35 @@ class ChatStorage:
         Raises:
             ValueError: If backend_type is not supported
         """
+        # Handle shared backend with automatic authentication
+        if backend_type == "supabase-shared":
+            import os
+
+            from ..auth.session import ensure_authenticated
+
+            credentials = ensure_authenticated()
+
+            # Use shared backend URL and key
+            kwargs.setdefault("project_url", os.getenv(
+                "LANGMIDDLE_PROJECT_URL",
+                "https://langmiddle.supabase.co"
+            ))
+            kwargs.setdefault("anon_key", os.getenv(
+                "LANGMIDDLE_ANON_KEY",
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder"
+            ))
+
+            # Create backend
+            backend = SupabaseStorageBackend(**kwargs)
+            storage = cls(backend, "supabase-shared")
+
+            # Store auth info for automatic injection
+            storage._auth_token = credentials["access_token"]
+            storage._user_id = credentials["user_id"]
+
+            logger.info(f"Created shared Supabase backend for user: {storage._user_id}")
+            return storage
+
         backends = {
             "supabase": SupabaseStorageBackend,
             "postgres": PostgreSQLStorageBackend,
@@ -69,10 +105,29 @@ class ChatStorage:
         try:
             backend = backends[backend_type](**kwargs)
             logger.debug(f"Created {backend_type} storage backend")
-            return cls(backend)
+            return cls(backend, backend_type)
         except Exception as e:
             logger.error(f"Failed to create {backend_type} backend: {e}")
             raise
+
+    def _inject_auth(self, credentials: Dict[str, Any] | None) -> Dict[str, Any]:
+        """Inject authentication token for shared backend.
+
+        Args:
+            credentials: Original credentials dictionary
+
+        Returns:
+            Credentials with auth token injected if using shared backend
+        """
+        if self.backend_type == "supabase-shared":
+            credentials = credentials.copy() if credentials else {}
+            credentials["auth_token"] = self._auth_token
+            if "user_id" not in credentials:
+                if not self._user_id:
+                    self._user_id = self.backend.extract_user_id(credentials)
+                if self._user_id:
+                    credentials["user_id"] = self._user_id
+        return credentials or {}
 
     def save_chat_history(
         self,
@@ -102,6 +157,7 @@ class ChatStorage:
                 - user_id: str - The user_id used
                 - saved_msg_ids: set - Set of all saved message IDs
         """
+        credentials = self._inject_auth(credentials)
 
         # Validate inputs
         if not thread_id:
@@ -212,6 +268,7 @@ class ChatStorage:
             dict: The thread matching the thread_id, or None if not found.
         """
         # Pass credentials to backend - backends with auth will use decorator
+        credentials = self._inject_auth(credentials)
         return self.backend.get_thread(
             thread_id=thread_id,
             credentials=credentials,
@@ -244,7 +301,8 @@ class ChatStorage:
         Returns:
             list[dict]: List of the threads matching the search parameters.
         """
-        # Authenticate with backend
+        # Inject auth and authenticate with backend
+        credentials = self._inject_auth(credentials)
         if not self.backend.authenticate(credentials):
             logger.error(f"Authentication failed with credentials: {credentials}")
             return []
@@ -278,6 +336,7 @@ class ChatStorage:
         Returns:
             True if table exists or was created, False otherwise
         """
+        credentials = self._inject_auth(credentials)
         if not self.backend.authenticate(credentials):
             logger.error("Authentication failed for get_or_create_embedding_table")
             return False
@@ -322,6 +381,7 @@ class ChatStorage:
             - model_dimension will be inferred from the first embedding if not explicitly provided
             - Validation ensures dimensional consistency across all embeddings
         """
+        credentials = self._inject_auth(credentials)
         if not self.backend.authenticate(credentials):
             return {
                 "success": False,
@@ -446,6 +506,7 @@ class ChatStorage:
         Returns:
             List of fact dictionaries with similarity scores, sorted by relevance
         """
+        credentials = self._inject_auth(credentials)
         if not self.backend.authenticate(credentials):
             logger.error("Authentication failed for query_facts")
             return []
@@ -497,6 +558,7 @@ class ChatStorage:
         Returns:
             Fact dictionary if found, None otherwise
         """
+        credentials = self._inject_auth(credentials)
         if not self.backend.authenticate(credentials):
             logger.error("Authentication failed for get_fact_by_id")
             return None
@@ -541,6 +603,7 @@ class ChatStorage:
         Returns:
             True if update successful, False otherwise
         """
+        credentials = self._inject_auth(credentials)
         if not self.backend.authenticate(credentials):
             logger.error("Authentication failed for update_fact")
             return False
@@ -599,6 +662,7 @@ class ChatStorage:
         Returns:
             True if deletion successful, False otherwise
         """
+        credentials = self._inject_auth(credentials)
         if not self.backend.authenticate(credentials):
             logger.error("Authentication failed for delete_fact")
             return False
@@ -638,6 +702,7 @@ class ChatStorage:
         Returns:
             True if message has been processed, False otherwise
         """
+        credentials = self._inject_auth(credentials)
         if not self.backend.authenticate(credentials):
             logger.error("Authentication failed for check_processed_message")
             return False
@@ -675,6 +740,7 @@ class ChatStorage:
         Returns:
             True if marked successfully, False otherwise
         """
+        credentials = self._inject_auth(credentials)
         if not self.backend.authenticate(credentials):
             logger.error("Authentication failed for mark_processed_message")
             return False
@@ -711,6 +777,7 @@ class ChatStorage:
         Returns:
             List of message IDs that have been processed
         """
+        credentials = self._inject_auth(credentials)
         if not self.backend.authenticate(credentials):
             logger.error("Authentication failed for check_processed_messages_batch")
             return []
@@ -746,6 +813,7 @@ class ChatStorage:
         Returns:
             True if all marked successfully, False otherwise
         """
+        credentials = self._inject_auth(credentials)
         if not self.backend.authenticate(credentials):
             logger.error("Authentication failed for mark_processed_messages_batch")
             return False
@@ -785,6 +853,7 @@ class ChatStorage:
         Returns:
             List of history records, ordered from newest to oldest
         """
+        credentials = self._inject_auth(credentials)
         if not self.backend.authenticate(credentials):
             logger.error("Authentication failed for get_fact_history")
             return []
@@ -827,6 +896,7 @@ class ChatStorage:
         Returns:
             List of recent change records
         """
+        credentials = self._inject_auth(credentials)
         if not self.backend.authenticate(credentials):
             logger.error("Authentication failed for get_recent_fact_changes")
             return []
@@ -872,6 +942,7 @@ class ChatStorage:
                 - oldest_change: Timestamp of oldest change
                 - newest_change: Timestamp of newest change
         """
+        credentials = self._inject_auth(credentials)
         if not self.backend.authenticate(credentials):
             logger.error("Authentication failed for get_fact_change_stats")
             return None
