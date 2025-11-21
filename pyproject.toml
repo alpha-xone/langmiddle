@@ -51,6 +51,7 @@ supabase = [
     "python-jose>=3.3.0",
     "python-dotenv>=1.0.0",
     "psycopg2-binary>=2.9.0",
+    "click>=8.0.0",
 ]
 firebase = [
     "firebase-admin>=6.0.0",
@@ -72,6 +73,9 @@ Homepage = "https://github.com/alpha-xone/langmiddle"
 Repository = "https://github.com/alpha-xone/langmiddle"
 Issues = "https://github.com/alpha-xone/langmiddle/issues"
 Documentation = "https://github.com/alpha-xone/langmiddle#readme"
+
+[project.scripts]
+langmiddle = "langmiddle.cli:cli"
 
 [tool.setuptools.packages.find]
 where = ["."]
