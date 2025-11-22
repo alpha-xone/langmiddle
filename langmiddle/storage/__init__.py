@@ -68,13 +68,13 @@ class ChatStorage:
             credentials = ensure_authenticated()
 
             # Use shared backend URL and key
-            kwargs.setdefault("project_url", os.getenv(
+            kwargs.setdefault("supabase_url", os.getenv(
                 "LANGMIDDLE_PROJECT_URL",
-                "https://langmiddle.supabase.co"
+                "https://frfdkegapvchcnczyesb.supabase.co"
             ))
-            kwargs.setdefault("anon_key", os.getenv(
+            kwargs.setdefault("supabase_key", os.getenv(
                 "LANGMIDDLE_ANON_KEY",
-                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder"
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZyZmRrZWdhcHZjaGNuY3p5ZXNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMxNTE1MjcsImV4cCI6MjA3ODcyNzUyN30.8br0FE9Dbk0dmiPCz8Lqzi4rb0r9vO_P6VU5S8uOtNk"
             ))
 
             # Create backend

@@ -37,7 +37,7 @@ class CredentialManager:
             "email": credentials.get("email"),
             "access_token": credentials["access_token"],
             "refresh_token": credentials["refresh_token"],
-            "project_url": "https://langmiddle.supabase.co",
+            "project_url": "https://frfdkegapvchcnczyesb.supabase.co",
             "saved_at": datetime.utcnow().isoformat(),
         }
 
