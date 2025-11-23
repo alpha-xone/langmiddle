@@ -28,7 +28,7 @@ __all__ = ["ChatStorage", "inspect_database", "peek_table", "peek_embeddings"]
 class ChatStorage:
     """Unified interface for chat storage across different backends.
 
-    Supports automatic authentication for 'supabase-shared' backend.
+    Supports automatic authentication for 'langmiddle' backend.
     """
 
     def __init__(self, backend: ChatStorageBackend, backend_type: str = "unknown"):
@@ -50,7 +50,7 @@ class ChatStorage:
         Factory method to create storage with specific backend.
 
         Args:
-            backend_type: Type of backend ('supabase-shared', 'supabase', 'postgres', 'sqlite', 'firebase')
+            backend_type: Type of backend ('langmiddle', 'supabase', 'postgres', 'sqlite', 'firebase')
             **kwargs: Backend-specific initialization parameters
 
         Returns:
@@ -59,8 +59,8 @@ class ChatStorage:
         Raises:
             ValueError: If backend_type is not supported
         """
-        # Handle shared backend with automatic authentication
-        if backend_type == "supabase-shared":
+        # Handle langmiddle platform backend with automatic authentication
+        if backend_type == "langmiddle":
             import os
 
             from ..auth.session import ensure_authenticated
@@ -79,13 +79,13 @@ class ChatStorage:
 
             # Create backend
             backend = SupabaseStorageBackend(**kwargs)
-            storage = cls(backend, "supabase-shared")
+            storage = cls(backend, "langmiddle")
 
             # Store auth info for automatic injection
             storage._auth_token = credentials["access_token"]
             storage._user_id = credentials["user_id"]
 
-            logger.info(f"Created shared Supabase backend for user: {storage._user_id}")
+            logger.info(f"Created LangMiddle platform backend for user: {storage._user_id}")
             return storage
 
         backends = {
@@ -111,15 +111,15 @@ class ChatStorage:
             raise
 
     def _inject_auth(self, credentials: Dict[str, Any] | None) -> Dict[str, Any]:
-        """Inject authentication token for shared backend.
+        """Inject authentication token for LangMiddle platform backend.
 
         Args:
             credentials: Original credentials dictionary
 
         Returns:
-            Credentials with auth token injected if using shared backend
+            Credentials with auth token injected if using langmiddle backend
         """
-        if self.backend_type == "supabase-shared":
+        if self.backend_type == "langmiddle":
             credentials = credentials.copy() if credentials else {}
             credentials["auth_token"] = self._auth_token
             if "user_id" not in credentials:

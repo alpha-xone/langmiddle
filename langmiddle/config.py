@@ -15,11 +15,11 @@ class StorageConfig:
     This config object can be shared across multiple middleware components
     to ensure they all use the same storage backend and settings.
 
-    For zero-setup experience, use backend="supabase-shared" (default).
-    This automatically uses the LangMiddle shared Supabase instance.
+    For zero-setup experience, use backend="langmiddle" (default).
+    This automatically uses the LangMiddle platform (langmiddle.com).
 
     Attributes:
-        backend: Storage backend to use ('supabase-shared', 'sqlite', 'supabase', 'postgres', 'firebase').
+        backend: Storage backend to use ('langmiddle', 'sqlite', 'supabase', 'postgres', 'firebase').
         db_path: Path to SQLite database file (for 'sqlite' backend).
         enable_facts: Whether to enable semantic memory/facts tables.
         connection_string: PostgreSQL connection string (for 'postgres'/'supabase').
@@ -29,7 +29,7 @@ class StorageConfig:
         auto_create_tables: Whether to automatically create tables on startup.
     """
 
-    backend: str = "supabase-shared"
+    backend: str = "langmiddle"
     db_path: str = ":memory:"
     enable_facts: bool = True
     connection_string: Optional[str] = None

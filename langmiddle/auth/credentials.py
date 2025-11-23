@@ -32,7 +32,7 @@ class CredentialManager:
             credentials: Dictionary containing user credentials
         """
         data = {
-            "backend": "supabase-shared",
+            "backend": "langmiddle",
             "user_id": credentials["user_id"],
             "email": credentials.get("email"),
             "access_token": credentials["access_token"],
