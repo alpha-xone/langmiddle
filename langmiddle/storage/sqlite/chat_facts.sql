@@ -226,3 +226,39 @@ COMMIT;
 -- - No SQL functions for relevance calculation (done in Python)
 -- - sqlite-vec handles vector operations instead of pgvector
 -- ==========================================================
+
+-- ==========================================================
+-- HARD DELETE (SQLite) - Manual Procedure
+-- SQLite does not support CREATE FUNCTION in plain SQL scripts. Provide a manual
+-- sequence of statements to permanently remove a fact and all related records.
+-- These operations are destructive and irreversible. Run them inside a
+-- transaction from your application or sqlite3 shell.
+--
+-- Example: hard-delete a single fact (replace placeholders)
+-- BEGIN TRANSACTION;
+-- -- 1) get the embedding dimension for the fact
+-- SELECT model_dimension FROM facts WHERE id = 'FACT_ID' AND user_id = 'USER_ID';
+-- -- 2) delete embeddings from the dimension-specific embedding table (if created)
+-- -- (replace {N} with the returned model_dimension)
+-- DELETE FROM fact_embeddings_{N} WHERE fact_id = 'FACT_ID';
+-- -- 3) delete access logs and history
+-- DELETE FROM fact_access_log WHERE fact_id = 'FACT_ID';
+-- DELETE FROM fact_history WHERE fact_id = 'FACT_ID';
+-- -- 4) delete the fact itself
+-- DELETE FROM facts WHERE id = 'FACT_ID' AND user_id = 'USER_ID';
+-- COMMIT;
+--
+-- Example: batch hard-delete (array of IDs)
+-- BEGIN TRANSACTION;
+-- -- If you know the set of dimensions involved, delete from each embedding table
+-- DELETE FROM fact_embeddings_128 WHERE fact_id IN ('id1','id2',...);
+-- DELETE FROM fact_embeddings_1536 WHERE fact_id IN ('id1','id2',...);
+-- DELETE FROM fact_access_log WHERE fact_id IN ('id1','id2',...);
+-- DELETE FROM fact_history WHERE fact_id IN ('id1','id2',...);
+-- DELETE FROM facts WHERE id IN ('id1','id2',...) AND user_id = 'USER_ID';
+-- COMMIT;
+--
+-- Note: In Python code you can automate this by reading the `model_dimension` per
+-- fact, checking sqlite_master for the existence of a `fact_embeddings_{N}` table,
+-- and issuing the deletes above inside a transaction.
+-- ==========================================================

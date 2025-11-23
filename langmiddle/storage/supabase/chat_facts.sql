@@ -798,3 +798,122 @@ COMMIT;
 -- - Phase 3: Enhanced search with combined scoring
 -- - RLS policies for multi-tenant security
 -- ==========================================================
+
+-- ==========================================================
+-- HARD DELETE FUNCTIONS FOR FACTS
+-- Permanently remove facts and all related records (embeddings, history, access logs)
+-- Use with extreme caution. These operations are irreversible.
+-- ==========================================================
+
+-- Function: hard_delete_fact (single fact)
+-- Permanently removes a fact and ALL related data (embeddings, history, access logs)
+-- This is destructive and cannot be undone
+create or replace function public.hard_delete_fact(
+  p_fact_id uuid,
+  p_user_id uuid
+)
+returns boolean
+language plpgsql
+security definer
+as $$
+declare
+  v_dimension int;
+  v_table_name text;
+begin
+  -- Verify ownership
+  if not exists (
+    select 1 from public.facts
+    where id = p_fact_id and user_id = p_user_id
+  ) then
+    raise exception 'Fact not found or access denied';
+  end if;
+
+  -- Get dimension for embedding table
+  select model_dimension into v_dimension
+  from public.facts
+  where id = p_fact_id;
+
+  v_table_name := 'fact_embeddings_' || v_dimension;
+
+  -- Delete embeddings (if table exists)
+  if public.embedding_table_exists(v_dimension) then
+    execute format(
+      'delete from public.%I where fact_id = $1',
+      v_table_name
+    ) using p_fact_id;
+  end if;
+
+  -- Delete access logs
+  delete from public.fact_access_log
+  where fact_id = p_fact_id;
+
+  -- Delete history records
+  delete from public.fact_history
+  where fact_id = p_fact_id;
+
+  -- Delete the fact itself
+  delete from public.facts
+  where id = p_fact_id and user_id = p_user_id;
+
+  return true;
+end;
+$$;
+
+comment on function public.hard_delete_fact is 'Permanently delete a fact and all related data (embeddings, history, access logs). Cannot be undone.';
+
+-- Function: hard_delete_facts_batch (multiple facts)
+-- Permanently removes multiple facts and ALL their related data
+create or replace function public.hard_delete_facts_batch(
+  p_fact_ids uuid[],
+  p_user_id uuid
+)
+returns int
+language plpgsql
+security definer
+as $$
+declare
+  v_fact_id uuid;
+  v_deleted_count int := 0;
+  v_dimension int;
+  v_table_name text;
+  v_dimensions int[];
+begin
+  -- Get all unique dimensions from the facts to be deleted
+  select array_agg(distinct model_dimension)
+  into v_dimensions
+  from public.facts
+  where id = any(p_fact_ids) and user_id = p_user_id;
+
+  -- Delete embeddings for each dimension
+  foreach v_dimension in array v_dimensions
+  loop
+    if public.embedding_table_exists(v_dimension) then
+      v_table_name := 'fact_embeddings_' || v_dimension;
+      execute format(
+        'delete from public.%I where fact_id = any($1)',
+        v_table_name
+      ) using p_fact_ids;
+    end if;
+  end loop;
+
+  -- Delete access logs
+  delete from public.fact_access_log
+  where fact_id = any(p_fact_ids);
+
+  -- Delete history records
+  delete from public.fact_history
+  where fact_id = any(p_fact_ids);
+
+  -- Delete the facts themselves and count
+  delete from public.facts
+  where id = any(p_fact_ids) and user_id = p_user_id;
+
+  get diagnostics v_deleted_count = row_count;
+
+  return v_deleted_count;
+end;
+$$;
+
+comment on function public.hard_delete_facts_batch is 'Permanently delete multiple facts and all related data in batch. Cannot be undone.';
+
+-- ==========================================================
