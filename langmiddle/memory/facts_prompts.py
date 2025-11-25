@@ -310,7 +310,7 @@ Decision Examples:
 
 DEFAULT_BASIC_INFO_INJECTOR = """
 <core_facts>
-### 👤 Essential User Profile (Always Apply)
+### 👤 Essential User Profile (Prioritize Relevance)
 Use this **core information** to shape the response style, content, and approach:
 {basic_info}
 </core_facts>"""
