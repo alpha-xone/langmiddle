@@ -917,3 +917,21 @@ $$;
 comment on function public.hard_delete_facts_batch is 'Permanently delete multiple facts and all related data in batch. Cannot be undone.';
 
 -- ==========================================================
+
+-- ==========================================================
+-- SUPABASE REALTIME: enable logical replication publication
+-- Creates an idempotent publication `supabase_realtime` for all public schema tables
+-- Supabase Realtime listens to this publication to broadcast DB changes.
+-- Note: creating replication slots or other superuser-only actions are not attempted here.
+-- ==========================================================
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication where pubname = 'supabase_realtime'
+  ) then
+    create publication supabase_realtime for all tables;
+  end if;
+end;
+$$;
+
