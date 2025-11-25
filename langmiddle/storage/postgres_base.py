@@ -461,6 +461,11 @@ class PostgreSQLBaseBackend(ChatStorageBackend):
                 metadata = getattr(msg, "response_metadata", {})
                 usage_metadata = getattr(msg, "usage_metadata", {})
 
+                # Update metadata with additional_kwargs if present
+                if hasattr(msg, 'additional_kwargs') and msg.additional_kwargs:
+                    metadata = metadata.copy() if metadata else {}
+                    metadata.update(msg.additional_kwargs)
+
                 # Convert metadata to JSON string for psycopg2
                 import json
 

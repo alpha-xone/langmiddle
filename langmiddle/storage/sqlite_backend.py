@@ -337,6 +337,12 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
                 for msg in messages:
                     try:
+                        # Prepare metadata with additional_kwargs if present
+                        metadata = getattr(msg, "response_metadata", {})
+                        if hasattr(msg, 'additional_kwargs') and msg.additional_kwargs:
+                            metadata = metadata.copy() if metadata else {}
+                            metadata.update(msg.additional_kwargs)
+
                         self._persistent_conn.execute(
                             """
                                 INSERT OR REPLACE INTO chat_messages
@@ -349,7 +355,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
                                 thread_id,
                                 msg.content,
                                 self.TYPE_TO_ROLE.get(msg.type, msg.type),
-                                json.dumps(getattr(msg, "response_metadata", {})),
+                                json.dumps(metadata),
                                 json.dumps(getattr(msg, "usage_metadata", {})),
                             ),
                         )
@@ -384,6 +390,12 @@ class SQLiteStorageBackend(ChatStorageBackend):
 
                     for msg in messages:
                         try:
+                            # Prepare metadata with additional_kwargs if present
+                            metadata = getattr(msg, "response_metadata", {})
+                            if hasattr(msg, 'additional_kwargs') and msg.additional_kwargs:
+                                metadata = metadata.copy() if metadata else {}
+                                metadata.update(msg.additional_kwargs)
+
                             conn.execute(
                                 """
                                 INSERT OR REPLACE INTO chat_messages
@@ -396,7 +408,7 @@ class SQLiteStorageBackend(ChatStorageBackend):
                                     thread_id,
                                     msg.content,
                                     self.TYPE_TO_ROLE.get(msg.type, msg.type),
-                                    json.dumps(getattr(msg, "response_metadata", {})),
+                                    json.dumps(metadata),
                                     json.dumps(getattr(msg, "usage_metadata", {})),
                                 ),
                             )

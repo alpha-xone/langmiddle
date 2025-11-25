@@ -522,6 +522,11 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
                     "usage_metadata": getattr(msg, "usage_metadata", {}),
                 }
 
+                # Update metadata with additional_kwargs if present
+                if hasattr(msg, 'additional_kwargs') and msg.additional_kwargs:
+                    msg_data["metadata"] = msg_data["metadata"].copy() if msg_data["metadata"] else {}
+                    msg_data["metadata"].update(msg.additional_kwargs)
+
                 result = (
                     self.client.table("chat_messages")
                     .upsert(msg_data, on_conflict="id")

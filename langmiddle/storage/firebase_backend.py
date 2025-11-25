@@ -259,6 +259,11 @@ class FirebaseStorageBackend(ChatStorageBackend):
                         "created_at": SERVER_TIMESTAMP,
                     }
 
+                    # Update metadata with additional_kwargs if present
+                    if hasattr(msg, 'additional_kwargs') and msg.additional_kwargs:
+                        msg_data["metadata"] = msg_data["metadata"].copy() if msg_data["metadata"] else {}
+                        msg_data["metadata"].update(msg.additional_kwargs)
+
                     batch.set(msg_ref, msg_data, merge=True)
                     saved_count += 1
 
