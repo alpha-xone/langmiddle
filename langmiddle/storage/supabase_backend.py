@@ -74,14 +74,17 @@ def extract_user_id_from_credentials(credentials: Dict[str, Any] | None) -> str 
     Extract user ID from credentials (static utility).
 
     Priority:
-    1. Direct 'user_id' in credentials
+    1. Direct 'user_id' in credentials (validated against JWT if both present)
     2. Extract from JWT 'sub' claim
 
     Args:
         credentials: Dict containing 'jwt_token' and/or 'user_id'
 
     Returns:
-        User ID if found, None otherwise
+        User ID if found and validated, None otherwise
+
+    Raises:
+        ValueError: If user_id and JWT user_id don't match
     """
     if not credentials:
         return None
@@ -92,23 +95,38 @@ def extract_user_id_from_credentials(credentials: Dict[str, Any] | None) -> str 
 
     # 1. Direct user_id in credentials
     user_id = credentials.get("user_id")
-    if user_id:
-        return user_id
 
     # 2. Extract from JWT token
     jwt_token = credentials.get("jwt_token")
-    if not jwt_token:
-        return None
+    jwt_user_id = None
 
-    try:
-        payload = jwt.get_unverified_claims(jwt_token)
-        return payload.get("sub")
-    except JWTError as e:
-        logger.error(f"Error decoding JWT token: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error extracting user_id from JWT: {e}")
-        return None
+    if jwt_token:
+        try:
+            payload = jwt.get_unverified_claims(jwt_token)
+            jwt_user_id = payload.get("sub")
+        except JWTError as e:
+            logger.error(f"Error decoding JWT token: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error extracting user_id from JWT: {e}")
+            return None
+
+    # If both user_id and JWT token are present, validate they match
+    if user_id and jwt_user_id:
+        if user_id != jwt_user_id:
+            logger.error(
+                f"User ID mismatch: provided user_id '{user_id}' does not match "
+                f"JWT token user_id '{jwt_user_id}'"
+            )
+            raise ValueError(
+                "User ID mismatch: provided user_id does not match JWT token. "
+                "This may indicate a security issue."
+            )
+        logger.debug(f"User ID validated: {user_id} matches JWT token")
+        return user_id
+
+    # Return whichever is available
+    return user_id or jwt_user_id
 
 
 def get_token_hash(jwt_token: str | None) -> str | None:
@@ -280,7 +298,18 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         user_id: str | None = None,
         auth_token: str | None = None,
     ) -> Dict[str, Any]:
-        """Prepare Supabase-specific credentials."""
+        """Prepare Supabase-specific credentials.
+
+        Args:
+            user_id: User identifier (optional)
+            auth_token: JWT token (optional)
+
+        Returns:
+            Dict with validated user_id and jwt_token
+
+        Raises:
+            ValueError: If user_id and JWT user_id don't match
+        """
         credentials = {"user_id": user_id}
         if auth_token:
             credentials["jwt_token"] = auth_token
@@ -289,7 +318,19 @@ class SupabaseStorageBackend(PostgreSQLBaseBackend):
         return credentials
 
     def extract_user_id(self, credentials: Dict[str, Any] | None) -> str | None:
-        """Extract user ID from credentials."""
+        """Extract user ID from credentials with validation.
+
+        If both user_id and JWT token are present, validates they match.
+
+        Args:
+            credentials: Dict containing 'jwt_token' and/or 'user_id'
+
+        Returns:
+            User ID if found and validated, None otherwise
+
+        Raises:
+            ValueError: If user_id and JWT user_id don't match
+        """
         return extract_user_id_from_credentials(credentials)
 
     def _ensure_authenticated(self, credentials: Dict[str, Any] | None) -> bool:
