@@ -159,7 +159,8 @@ def split_messages(
 
     Args:
         messages: List of messages (either AnyMessage or dicts) to split.
-        by_tags: The additional_kwargs tag keys to use for splitting.
+        by_tags: The tags in additional_kwargs to use for splitting.
+                 Tag will be in the format of {"tag": tag}.
 
     Returns:
         Dict with keys as tags and values as lists of messages.
@@ -167,9 +168,9 @@ def split_messages(
     tagged_msgs = defaultdict(list)
     for msg in messages:
         additional_kwargs = getattr(msg, "additional_kwargs", {})
-        if any(additional_kwargs.get(tag) for tag in by_tags):
+        if any(additional_kwargs.get("tag") == tag for tag in by_tags):
             for tag in by_tags:
-                if additional_kwargs.get(tag):
+                if additional_kwargs.get("tag") == tag:
                     tagged_msgs[tag].append(msg)
         else:
             tagged_msgs["default"].append(msg)
