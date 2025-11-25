@@ -177,8 +177,8 @@ logger = get_graph_logger(__name__)
 # Disable propagation to avoid duplicate logs
 logger._logger.propagate = False
 
-CONTEXT_TAG = "langmiddle/context"
-SUMMARY_TAG = "langmiddle/summary"
+CONTEXT_TAG = "langmiddle:context"
+SUMMARY_TAG = "langmiddle:summary"
 LOGS_KEY = "langmiddle:context:trace"
 
 
@@ -966,7 +966,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         # Filter out summary messages - never extract facts from summaries
         extractable_messages = [
             msg for msg in messages
-            if not msg.additional_kwargs.get(SUMMARY_TAG)
+            if not msg.additional_kwargs.get("tag") in [SUMMARY_TAG, CONTEXT_TAG]
         ]
 
         if not extractable_messages:
@@ -1174,7 +1174,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                 if summary_text:
                     summary_msgs = [HumanMessage(
                         content=f'{self.summarization_config.prefix}{summary_text}'.strip(),
-                        additional_kwargs={SUMMARY_TAG: True},
+                        additional_kwargs={"tag": SUMMARY_TAG},
                         id=summary_msgs[0].id if len(summary_msgs) > 0 else None,
                     )]
                     logger.info(
@@ -1272,7 +1272,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                     context_msgs = [
                         SystemMessage(
                             content="\n\n".join(context_parts),
-                            additional_kwargs={CONTEXT_TAG: True},
+                            additional_kwargs={"tag": CONTEXT_TAG},
                             id=context_msgs[0].id if len(context_msgs) > 0 else None,
                         )
                     ]
