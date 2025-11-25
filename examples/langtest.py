@@ -30,8 +30,8 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-import requests
 import jwt as pyjwt
+import requests
 from dotenv import load_dotenv
 from langgraph_sdk import get_client
 from langgraph_sdk.schema import StreamMode
@@ -82,8 +82,13 @@ def get_access_headers(**kwargs) -> Optional[dict]:
         None if credentials not available
     """
     credentials = load_langmiddle_credentials()
+    # If credentials file is missing or invalid, try a top-level refresh once
     if not credentials:
-        return None
+        refreshed = refresh_langmiddle_token()
+        if refreshed:
+            credentials = refreshed
+        else:
+            return None
 
     access_token = credentials.get("access_token")
 
@@ -97,8 +102,8 @@ def get_access_headers(**kwargs) -> Optional[dict]:
             # Consider token expired if within 10 seconds of exp
             return time.time() >= (exp - 10)
         except Exception:
-            # If we can't decode, assume not expired so we don't block
-            return False
+            # If we can't decode the token, assume it's expired so we try to refresh
+            return True
 
     def refresh_access_token(creds: dict) -> Optional[dict]:
         # Use stored project_url and refresh_token to request a new access token
@@ -138,6 +143,12 @@ def get_access_headers(**kwargs) -> Optional[dict]:
 
         return creds
 
+    # If we don't have an access token but have a refresh token, try refresh
+    if not access_token and credentials.get("refresh_token"):
+        refreshed = refresh_access_token(credentials)
+        if refreshed:
+            access_token = refreshed.get("access_token")
+
     # If token appears expired, try to refresh using refresh_token
     if access_token and is_token_expired(access_token):
         refreshed = refresh_access_token(credentials)
@@ -173,6 +184,51 @@ def check_authentication():
     print(f"✅ Authenticated as: {credentials.get('email', 'N/A')}")
     print(f"   User ID: {credentials['user_id']}")
     return True
+
+
+def refresh_langmiddle_token(creds: Optional[dict] = None) -> Optional[dict]:
+    """
+    Top-level helper to refresh stored LangMiddle access token using the refresh_token.
+
+    Returns the updated credentials dict on success, or None on failure.
+    """
+    credentials = creds or load_langmiddle_credentials()
+    if not credentials:
+        return None
+
+    project_url = credentials.get("project_url") or os.getenv("LANGMIDDLE_PROJECT_URL")
+    refresh_token = credentials.get("refresh_token")
+    if not project_url or not refresh_token:
+        return None
+
+    token_url = project_url.rstrip("/") + "/auth/v1/token"
+    try:
+        resp = requests.post(
+            token_url,
+            data={"grant_type": "refresh_token", "refresh_token": refresh_token},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+    except Exception as e:
+        print(f"❌ Error refreshing token: {e}")
+        return None
+
+    if resp.status_code not in (200, 201):
+        print(f"❌ Token refresh failed ({resp.status_code}): {resp.text}")
+        return None
+
+    data = resp.json()
+    credentials["access_token"] = data.get("access_token", credentials.get("access_token"))
+    credentials["refresh_token"] = data.get("refresh_token", credentials.get("refresh_token"))
+
+    try:
+        credentials_file = Path.home() / ".langmiddle" / "credentials.json"
+        with open(credentials_file, "w") as f:
+            json.dump(credentials, f, indent=2)
+    except Exception as e:
+        print(f"⚠️ Warning: could not persist refreshed token: {e}")
+
+    return credentials
 
 
 async def search_assistants(**kwargs):
@@ -211,8 +267,28 @@ async def create_thread(**kwargs):
     """Create thread"""
     headers = get_access_headers(**kwargs)
     if not headers:
+        # Try to refresh stored tokens and re-acquire headers once
+        refreshed = refresh_langmiddle_token()
+        if refreshed:
+            headers = get_access_headers(**kwargs)
+
+    if not headers:
         raise Exception("Failed to get valid access headers")
-    return await client.threads.create(headers=headers, **kwargs)
+
+    try:
+        return await client.threads.create(headers=headers, **kwargs)
+    except Exception as e:
+        # If the failure looks like an authorization error, try refreshing once and retry
+        status = getattr(e, "status_code", None) or getattr(e, "status", None)
+        msg = str(e)
+        if status == 401 or "401" in msg or "unauthorized" in msg.lower() or "authorization" in msg.lower():
+            refreshed = refresh_langmiddle_token()
+            if refreshed:
+                headers = get_access_headers(**kwargs)
+                if headers:
+                    return await client.threads.create(headers=headers, **kwargs)
+        # re-raise original exception if retry not performed or still failing
+        raise
 
 
 async def delete_thread(thread_id, **kwargs):
