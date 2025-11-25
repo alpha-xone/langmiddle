@@ -490,7 +490,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             self.backend = backend.lower()
 
         # Ensure valid backend configuration
-        supported_backends = ["supabase", "postgres", "postgresql", "sqlite", "firebase"]
+        supported_backends = ["supabase", "langmiddle", "sqlite"]
         if self.backend not in supported_backends:
             logger.warning(
                 f"Unknown backend: {backend}. Supported: {supported_backends}. "
@@ -500,7 +500,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
 
         self.model: BaseChatModel | None = None
         self.embedder: Embeddings | None = None
-        self.storage: Any = None
+        self.storage: ChatStorage | None = None
         self.embeddings_cache: dict[str, list[float]] = self._state.embeddings_cache
 
         # Initialize LLM model

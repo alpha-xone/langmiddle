@@ -94,6 +94,7 @@ class ChatStorage:
             "postgresql": PostgreSQLStorageBackend,
             "sqlite": SQLiteStorageBackend,
             "firebase": FirebaseStorageBackend,
+            "langmiddle": SupabaseStorageBackend,  # Alias for langmiddle platform
         }
 
         if backend_type not in backends:

@@ -305,6 +305,7 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         self.save_interval: int = save_interval
         self._model_call_count: int = 0
         self._saved_msg_ids: set[str] = set()  # Persistent tracking of saved message IDs
+        self.storage: ChatStorage | None = None
 
         # Handle StorageConfig object
         if isinstance(backend, StorageConfig):
@@ -343,6 +344,10 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
             {"langmiddle:history:trace": ["Saved 3 messages to thread-123 (skipped 2 duplicates)"]}
             Returns None if no save operation was performed.
         """
+        if not self.storage:
+            logger.warning("Storage backend not initialized; skipping chat history save")
+            return None
+
         # Increment call count
         self._model_call_count += 1
 
@@ -411,6 +416,9 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         Returns:
             Credentials dictionary with appropriate keys for the backend.
         """
+        if not self.storage:
+            return {}
+
         credentials: dict[str, Any] = {"user_id": user_id}
 
         if auth_token:
