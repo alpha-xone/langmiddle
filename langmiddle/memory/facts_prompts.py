@@ -299,18 +299,16 @@ Facts under ["user", ...] represent long-term identity. Update carefully and del
 """
 
 DEFAULT_BASIC_INFO_INJECTOR = """
-<core_facts>
 ### 👤 Essential User Profile (Prioritize Relevance)
 Use this **core information** to shape the response style, content, and approach:
 {basic_info}
-</core_facts>"""
+"""
 
 DEFAULT_FACTS_INJECTOR = """
-<context_facts>
 ### 🧠 Current Conversation Context (Prioritize Relevance)
 Use these **context-specific facts** to tailor the response, addressing the user's immediate goals, interests, challenges, or preferences:
 {facts}
-</context_facts>"""
+"""
 
 DEFAULT_CUES_PRODUCER = """
 <role>
@@ -421,8 +419,7 @@ Example 2 (Resolving Pronouns & Implicit Intent)
 
 
 DEFAULT_PREV_SUMMARY = """
-<previous_summary>
-Below is the summary of previous conversations (it may have overlaps with the current conversation):
+### 📜 Previous Conversations Summary (Prioritize Relevance)
+Use this **historical context** to maintain continuity and avoid repetition (it may have overlaps with the current conversation):
 
-{prev_summary}
-</previous_summary>"""
+{prev_summary}"""

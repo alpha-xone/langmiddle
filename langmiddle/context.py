@@ -56,6 +56,7 @@ from .memory.facts_prompts import (
     DEFAULT_FACTS_EXTRACTOR,
     DEFAULT_FACTS_INJECTOR,
     DEFAULT_FACTS_UPDATER,
+    DEFAULT_PREV_SUMMARY,
 )
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
@@ -470,6 +471,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
         self._summarization_config = summarization_config or SummarizationConfig(
             max_tokens=max_tokens_before_summarization or 5000,
             prompt=summary_prompt,
+            prefix=DEFAULT_PREV_SUMMARY,
         )
 
         self._context_config = context_config or ContextConfig(
