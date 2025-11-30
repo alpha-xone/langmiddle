@@ -50,6 +50,18 @@ def embed_messages(
         return None
 
 
+def is_middleware_message(msg: AnyMessage | dict) -> bool:
+    """
+    Check if a message is a middleware message.
+    """
+    if isinstance(msg, dict):
+        tag = msg.get("additional_kwargs", {}).get("tag", "")
+    else:
+        tag = getattr(msg, "additional_kwargs", {}).get("tag", "")
+
+    return tag.startswith("langmiddle:")
+
+
 def is_tool_message(msg: AnyMessage | dict) -> bool:
     """Check if a message is a tool message.
 

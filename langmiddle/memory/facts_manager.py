@@ -9,7 +9,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 
 from ..utils.logging import get_graph_logger
-from ..utils.messages import is_tool_message
+from ..utils.messages import is_middleware_message, is_tool_message
 from .facts_models import (
     AtomicQueries,
     CuesResponse,
@@ -275,7 +275,10 @@ def extract_facts(
         extraction_prompt: Prompt template for extraction
         messages: Messages to extract facts from
     """
-    filtered_messages = [msg for msg in messages if not is_tool_message(msg)]
+    filtered_messages = [
+        msg for msg in messages
+        if not is_tool_message(msg) and not is_middleware_message(msg)
+    ]
     if not filtered_messages:
         logger.debug("[extract_facts] No messages to process after filtering tool messages")
         return None
