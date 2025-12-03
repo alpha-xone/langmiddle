@@ -67,20 +67,20 @@ Track facts across these categories when relevant:
 Return **only** a valid JSON object.
 
 If no facts exist, return:
-{"facts": []}
+{{"facts": []}}
 
 Structure:
-{
+{{
   "facts": [
-    {
+    {{
       "content": "<subject> <predicate> <object>",
       "namespace": ["category", "subcategory"],
       "intensity": 0.0 - 1.0,
       "confidence": 0.0 - 1.0,
       "language": "en"
-    }
+    }}
   ]
-}
+}}
 </output_format>
 
 <examples>
