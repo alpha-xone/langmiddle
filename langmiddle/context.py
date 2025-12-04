@@ -1174,7 +1174,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                     prev_summary=prev_summary,
                 )
                 if summary_text:
-                    summary_msgs = [HumanMessage(
+                    summary_msgs = [SystemMessage(
                         content=f'{self.summarization_config.prefix}{summary_text}'.strip(),
                         additional_kwargs={"tag": SUMMARY_TAG},
                         id=summary_msgs[0].id if len(summary_msgs) > 0 else None,

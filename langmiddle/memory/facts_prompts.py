@@ -16,7 +16,7 @@ Analyze the user's messages and extract concrete, verifiable facts, enduring pre
 
 **Fact Format Requirements**
 - **Form:** Each fact must be a concise semantic triple: `<subject> <predicate> <object>`.
-- **Source:** Extract facts **only** from user messages (ignore assistant, system, and developer content).
+- **Source:** Extract facts **only** from user messages (ignore assistant, AI, system, and developer messages).
 - **Language:** Write each fact's `content` in the **same language** the user used (no translation).
   Set the `language` field accordingly (e.g., "en", "es", "fr").
 - **Predicates:** Use natural, unambiguous predicates (e.g., `has name`, `prefers`, `is located in`, `plans to`, `wants to learn`).
