@@ -62,6 +62,7 @@ from .storage import ChatStorage
 from .utils.logging import get_graph_logger
 from .utils.messages import (
     is_middleware_message,
+    is_tool_message,
     message_string_contents,
     split_messages,
 )
@@ -970,7 +971,10 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             return None
 
         # Filter out summary messages - never extract facts from summaries
-        extractable_messages = [msg for msg in messages if not is_middleware_message(msg)]
+        extractable_messages = [
+            msg for msg in messages
+            if not is_tool_message(msg) and not is_middleware_message(msg)
+        ]
 
         if not extractable_messages:
             logger.debug("No extractable messages after filtering context and summaries")
