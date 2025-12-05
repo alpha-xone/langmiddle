@@ -60,7 +60,11 @@ from .memory.facts_prompts import (
 )
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
-from .utils.messages import is_middleware_message, message_string_contents, split_messages
+from .utils.messages import (
+    is_middleware_message,
+    message_string_contents,
+    split_messages,
+)
 from .utils.runtime import auth_storage, get_user_id
 
 
