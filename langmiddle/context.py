@@ -60,7 +60,7 @@ from .memory.facts_prompts import (
 )
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
-from .utils.messages import message_string_contents, split_messages
+from .utils.messages import is_middleware_message, message_string_contents, split_messages
 from .utils.runtime import auth_storage, get_user_id
 
 
@@ -966,13 +966,10 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
             return None
 
         # Filter out summary messages - never extract facts from summaries
-        extractable_messages = [
-            msg for msg in messages
-            if not msg.additional_kwargs.get("tag") in [SUMMARY_TAG, CONTEXT_TAG]
-        ]
+        extractable_messages = [msg for msg in messages if not is_middleware_message(msg)]
 
         if not extractable_messages:
-            logger.debug("No extractable messages after filtering summaries")
+            logger.debug("No extractable messages after filtering context and summaries")
             return None
 
         # Validate storage and authenticate
@@ -1174,7 +1171,7 @@ class ContextEngineer(AgentMiddleware[AgentState, ContextT]):
                     prev_summary=prev_summary,
                 )
                 if summary_text:
-                    summary_msgs = [SystemMessage(
+                    summary_msgs = [HumanMessage(
                         content=f'{self.summarization_config.prefix}{summary_text}'.strip(),
                         additional_kwargs={"tag": SUMMARY_TAG},
                         id=summary_msgs[0].id if len(summary_msgs) > 0 else None,
