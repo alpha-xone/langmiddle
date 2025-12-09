@@ -10,7 +10,7 @@ from collections import defaultdict
 from typing import Any, Callable
 
 from langchain.embeddings import Embeddings, init_embeddings
-from langchain_core.messages import AnyMessage, AIMessage
+from langchain_core.messages import AIMessage, AnyMessage
 from langchain_core.messages.utils import count_tokens_approximately
 
 from ..utils.logging import get_graph_logger
@@ -254,11 +254,13 @@ def normalized_token_counts(
         # Compare with approx tokens since last token count
         total_tokens = max(total_tokens, 1)
         approx_tokens = token_counter(messages[cnt_idx:i]) + overhead_tokens
+        if not msg.response_metadata:
+            msg.response_metadata = {}
+        msg.response_metadata["approx_tokens"] = approx_tokens
         for scale in candidates:
             if abs(total_tokens - approx_tokens * scale) / total_tokens < tolerance:
                 # Update normalized token scale and used counts
                 msg.response_metadata["token_scale"] = scale
-                msg.response_metadata["approx_tokens"] = approx_tokens
                 # Update token counts in usage metadata
                 for token_type in ["input", "output", "total"]:
                     if f"{token_type}_tokens" in msg.usage_metadata:
