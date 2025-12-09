@@ -12,8 +12,7 @@ from typing import Any
 from dotenv import load_dotenv
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.messages import RemoveMessage
-from langchain_core.messages import AIMessage, AnyMessage
-from langchain_core.messages.utils import count_tokens_approximately
+from langchain_core.messages import AnyMessage
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
 from langgraph.typing import ContextT
@@ -21,7 +20,7 @@ from langgraph.typing import ContextT
 from .config import StorageConfig
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
-from .utils.messages import filter_tool_messages
+from .utils.messages import filter_tool_messages, normalized_token_counts
 from .utils.runtime import get_user_id
 
 load_dotenv()
@@ -386,38 +385,11 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         # Prepare credentials based on available context
         credentials: dict[str, Any] = self._prepare_credentials(user_id, auth_token)
 
-        # Dealing with token scale inconsistency (Silicon Flow known issue)
-        for i, msg in enumerate(messages):
-            # Skip non-AI messages - only AI messages have usage metadata
-            if not isinstance(msg, AIMessage):
-                continue
-
-            # Check availability of usage token
-            if not (msg.usage_metadata and isinstance(msg.usage_metadata, dict)):
-                continue
-            total_tokens = msg.usage_metadata.get("total_tokens")
-            if not total_tokens:
-                continue
-
-            # Compare with approx tokens in the conversation so far
-            approx_tokens = count_tokens_approximately(messages[:i])
-            print(f"Approximate tokens: {approx_tokens}")
-            if total_tokens > 300 * approx_tokens:
-                for token_type in ["input", "output", "total"]:
-                    if f"{token_type}_tokens" in msg.usage_metadata:
-                        print(f"Removing thousands scale of {token_type}_tokens: {msg.usage_metadata[f'{token_type}_tokens']}")
-                        msg.usage_metadata[f"{token_type}_tokens"] = int(msg.usage_metadata[f"{token_type}_tokens"] // 1000)
-                    if f"{token_type}_tokens_details" in msg.usage_metadata:
-                        for token_name, token_value in msg.usage_metadata[f"{token_type}_tokens_details"].items():
-                            if isinstance(token_value, (int, float)):
-                                print(f"Removing thousands scale of {token_name} in {token_type}_tokens_details: {token_value}")
-                                msg.usage_metadata[f"{token_type}_tokens_details"][token_name] = int(token_value // 1000)
-
         # Save chat history using the storage backend
         result = self.storage.save_chat_history(
             thread_id=thread_id,
             credentials=credentials,
-            messages=messages,
+            messages=normalized_token_counts(messages),
             user_id=user_id,
             saved_msg_ids=self._saved_msg_ids,  # Pass persistent set
             custom_state=custom_state,

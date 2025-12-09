@@ -7,14 +7,17 @@ different middleware components.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
+from typing import Any, Callable
 
 from langchain.embeddings import Embeddings, init_embeddings
-from langchain_core.messages import AnyMessage
+from langchain_core.messages import AnyMessage, AIMessage
+from langchain_core.messages.utils import count_tokens_approximately
 
 from ..utils.logging import get_graph_logger
 
 logger = get_graph_logger(__name__)
+
+DEFAULT_TOKEN_COUNTER = count_tokens_approximately
 
 
 def embed_messages(
@@ -214,3 +217,59 @@ def message_string_contents(msg: AnyMessage | dict) -> list[str]:
 
     # Return empty list if content is neither str nor list of strings
     return []
+
+
+def normalized_token_counts(
+    messages: list[AnyMessage],
+    *,
+    overhead_tokens: int = 2000,
+    token_counter: Callable[[list[AnyMessage]], int] = DEFAULT_TOKEN_COUNTER,
+) -> list[AnyMessage]:
+    """Get normalized token counts for AI messages in a message list.
+
+    Args:
+        messages: List of messages (AnyMessage) to analyze.
+        overhead_tokens: Number of overhead tokens to consider in the approximation.
+        token_counter: Function to count tokens approximately in a list of messages.
+
+    Returns:
+        List of messages with normalized token counts.
+    """
+    candidates = [8, 16, 32, 64, 128, 256, 512, 1024]
+    tolerance = 0.35  # 35% tolerance
+    cnt_idx = 0
+
+    for i, msg in enumerate(messages):
+        # Skip non-AI messages - only AI messages have usage metadata
+        if not isinstance(msg, AIMessage):
+            continue
+
+        # Check availability of usage token
+        if not (msg.usage_metadata and isinstance(msg.usage_metadata, dict)):
+            continue
+        total_tokens = msg.usage_metadata.get("total_tokens", 0)
+        if total_tokens <= 0:
+            continue
+
+        # Compare with approx tokens since last token count
+        total_tokens = max(total_tokens, 1)
+        approx_tokens = token_counter(messages[cnt_idx:i]) + overhead_tokens
+        for scale in candidates:
+            if abs(total_tokens - approx_tokens * scale) / total_tokens < tolerance:
+                # Update normalized token scale and used counts
+                msg.response_metadata["token_scale"] = scale
+                msg.response_metadata["approx_tokens"] = approx_tokens
+                # Update token counts in usage metadata
+                for token_type in ["input", "output", "total"]:
+                    if f"{token_type}_tokens" in msg.usage_metadata:
+                        msg.usage_metadata[f"{token_type}_tokens"] = int(msg.usage_metadata[f"{token_type}_tokens"] // scale)
+                    if f"{token_type}_tokens_details" in msg.usage_metadata:
+                        for token_name, token_value in msg.usage_metadata[f"{token_type}_tokens_details"].items():
+                            if isinstance(token_value, (int, float)):
+                                msg.usage_metadata[f"{token_type}_tokens_details"][token_name] = int(token_value // scale)
+                break
+
+        # Update the last counted index
+        cnt_idx = i + 1
+
+    return messages
