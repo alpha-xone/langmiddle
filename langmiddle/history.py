@@ -6,7 +6,6 @@ chat messages to databases (SQLite, Supabase, Firebase) after each model respons
 
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
@@ -388,25 +387,30 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         credentials: dict[str, Any] = self._prepare_credentials(user_id, auth_token)
 
         # Dealing with token scale inconsistency (Silicon Flow known issue)
-        model_msgs = defaultdict(list)
         for i, msg in enumerate(messages):
-            cur_model = getattr(msg, "response_metadata", {}).get("model_name", "unknown")
-            model_msgs[cur_model].append(i)
-            if msg.id in self._saved_msg_ids or not isinstance(msg, AIMessage):  # Skip duplicate messages
+            # Skip non-AI messages - only AI messages have usage metadata
+            if not isinstance(msg, AIMessage):
                 continue
-            if not (msg.usage_metadata and isinstance(msg.usage_metadata, dict) and "total_tokens" in msg.usage_metadata):
+
+            # Check availability of usage token
+            if not (msg.usage_metadata and isinstance(msg.usage_metadata, dict)):
                 continue
-            total_tokens = msg.usage_metadata["total_tokens"]
+            total_tokens = msg.usage_metadata.get("total_tokens")
             if not total_tokens:
                 continue
-            approx_tokens = count_tokens_approximately([m for j, m in enumerate(messages[:i]) if j in model_msgs[cur_model]])
-            if total_tokens > 200 * approx_tokens:
+
+            # Compare with approx tokens in the conversation so far
+            approx_tokens = count_tokens_approximately(messages[:i])
+            print(f"Approximate tokens: {approx_tokens}")
+            if total_tokens > 300 * approx_tokens:
                 for token_type in ["input", "output", "total"]:
                     if f"{token_type}_tokens" in msg.usage_metadata:
+                        print(f"Removing thousands scale of {token_type}_tokens: {msg.usage_metadata[f'{token_type}_tokens']}")
                         msg.usage_metadata[f"{token_type}_tokens"] = int(msg.usage_metadata[f"{token_type}_tokens"] // 1000)
                     if f"{token_type}_tokens_details" in msg.usage_metadata:
                         for token_name, token_value in msg.usage_metadata[f"{token_type}_tokens_details"].items():
                             if isinstance(token_value, (int, float)):
+                                print(f"Removing thousands scale of {token_name} in {token_type}_tokens_details: {token_value}")
                                 msg.usage_metadata[f"{token_type}_tokens_details"][token_name] = int(token_value // 1000)
 
         # Save chat history using the storage backend
