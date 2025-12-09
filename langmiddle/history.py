@@ -6,6 +6,7 @@ chat messages to databases (SQLite, Supabase, Firebase) after each model respons
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,6 +14,7 @@ from dotenv import load_dotenv
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.messages import RemoveMessage
 from langchain_core.messages import AnyMessage
+from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
 from langgraph.typing import ContextT
@@ -384,6 +386,27 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
 
         # Prepare credentials based on available context
         credentials: dict[str, Any] = self._prepare_credentials(user_id, auth_token)
+
+        # Dealing with token scale inconsistency (Silicon Flow known issue)
+        model_msgs = defaultdict(list)
+        for i, msg in enumerate(messages):
+            cur_model = getattr(msg, "response_metadata", {}).get("model_name", "unknown")
+            model_msgs[cur_model].append(i)
+            if msg.id in self._saved_msg_ids:  # Skip duplicate messages
+                continue
+            usage = getattr(msg, "usage_metadata", {})
+            total_tokens = usage.get("total_tokens", None)
+            if not total_tokens:
+                continue
+            approx_tokens = count_tokens_approximately([msg for j, msg in enumerate(messages[:i]) if j in model_msgs[cur_model]])
+            if total_tokens > 200 * approx_tokens:
+                for token_type in ["input", "output", "total"]:
+                    if f"{token_type}_tokens" in usage:
+                        usage[f"{token_type}_tokens"] = int(usage[f"{token_type}_tokens"] // 1000)
+                    if f"{token_type}_tokens_details" in usage:
+                        for token_name, token_value in usage[f"{token_type}_tokens_details"].items():
+                            if isinstance(token_value, (int, float)):
+                                usage[f"{token_type}_tokens_details"][token_name] = int(token_value // 1000)
 
         # Save chat history using the storage backend
         result = self.storage.save_chat_history(
