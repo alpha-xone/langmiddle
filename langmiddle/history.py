@@ -13,7 +13,7 @@ from typing import Any
 from dotenv import load_dotenv
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.messages import RemoveMessage
-from langchain_core.messages import AnyMessage, UsageMetadata
+from langchain_core.messages import AIMessage, AnyMessage
 from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
@@ -392,11 +392,11 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         for i, msg in enumerate(messages):
             cur_model = getattr(msg, "response_metadata", {}).get("model_name", "unknown")
             model_msgs[cur_model].append(i)
-            if msg.id in self._saved_msg_ids:  # Skip duplicate messages
+            if msg.id in self._saved_msg_ids or not isinstance(msg, AIMessage):  # Skip duplicate messages
                 continue
-            if not isinstance(msg.usage_metadata, UsageMetadata):
+            if not (msg.usage_metadata and isinstance(msg.usage_metadata, dict) and "total_tokens" in msg.usage_metadata):
                 continue
-            total_tokens = msg.usage_metadata.get("total_tokens", None)
+            total_tokens = msg.usage_metadata["total_tokens"]
             if not total_tokens:
                 continue
             approx_tokens = count_tokens_approximately([m for j, m in enumerate(messages[:i]) if j in model_msgs[cur_model]])
