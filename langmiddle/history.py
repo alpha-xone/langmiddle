@@ -20,7 +20,7 @@ from langgraph.typing import ContextT
 from .config import StorageConfig
 from .storage import ChatStorage
 from .utils.logging import get_graph_logger
-from .utils.messages import filter_tool_messages, normalized_token_counts
+from .utils.messages import filter_tool_messages
 from .utils.runtime import get_user_id
 
 load_dotenv()
@@ -389,7 +389,7 @@ class ChatSaver(AgentMiddleware[AgentState, ContextT]):
         result = self.storage.save_chat_history(
             thread_id=thread_id,
             credentials=credentials,
-            messages=normalized_token_counts(messages),
+            messages=messages,
             user_id=user_id,
             saved_msg_ids=self._saved_msg_ids,  # Pass persistent set
             custom_state=custom_state,

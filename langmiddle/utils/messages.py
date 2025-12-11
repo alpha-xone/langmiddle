@@ -237,7 +237,6 @@ def normalized_token_counts(
     """
     candidates = [8, 16, 32, 64, 128, 256, 512, 1024]
     tolerance = 0.35  # 35% tolerance
-    cnt_idx = 0
 
     for i, msg in enumerate(messages):
         # Skip non-AI messages - only AI messages have usage metadata
@@ -253,7 +252,7 @@ def normalized_token_counts(
 
         # Compare with approx tokens since last token count
         total_tokens = max(total_tokens, 1)
-        approx_tokens = token_counter(messages[cnt_idx:i]) + overhead_tokens
+        approx_tokens = token_counter(messages[:i]) + overhead_tokens
         if not msg.response_metadata:
             msg.response_metadata = {}
         msg.response_metadata["approx_tokens"] = approx_tokens
@@ -270,8 +269,5 @@ def normalized_token_counts(
                             if isinstance(token_value, (int, float)):
                                 msg.usage_metadata[f"{token_type}_tokens_details"][token_name] = int(token_value // scale)
                 break
-
-        # Update the last counted index
-        cnt_idx = i + 1
 
     return messages
